@@ -27,6 +27,25 @@ After building, `pnpm start` serves both the compiled client and API at `http://
 
 The backend accepts optional `PORT`, `CODEX_BIN`, `AGY_BIN`, and `OPENCODE_BIN` environment variables. For example, `AGY_BIN=/absolute/path/to/agy pnpm dev:server`. `AGY_HISTORY_DB` can override the Antigravity summary database path for discovery; it does not change where the CLI stores its own data. The Vite proxy targets port 3001; update its target if changing the backend port during development.
 
+## Run with PM2
+
+From the repository root, using the installed Node.js and PM2:
+
+```sh
+pnpm build
+pm2 start ecosystem.config.cjs --only agentdex
+pm2 logs agentdex
+```
+
+Open `http://127.0.0.1:6001`; the server serves both the client and API on that loopback address. After changes, rebuild and restart:
+
+```sh
+pnpm build
+pm2 restart ecosystem.config.cjs --only agentdex
+```
+
+The configuration runs one forked process with automatic restart and file watching disabled. Terminal state lives in memory, so use a single instance; restarting ends managed terminal sessions. These commands do not configure boot startup or save the PM2 process list.
+
 ## Structure
 
 - `apps/client`: Vite, React, TypeScript, Tailwind CSS, shadcn/ui, and React Router data mode. Pages colocate loaders/actions; layouts own the app shell. Session reads, launches, and stops use route loaders/actions.
