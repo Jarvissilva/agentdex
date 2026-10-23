@@ -5,12 +5,12 @@ import path from 'node:path';
 import { test } from 'node:test';
 import type { StoredSession } from '@agentdex/shared';
 import ProviderRegistry from '../src/lib/providers/index.js';
-import codex from '../src/lib/providers/codex.js';
-import listCodexSessions from '../src/lib/providers/codexSessions.js';
+import codex from '../src/lib/providers/codex/index.js';
+import listCodexSessions from '../src/lib/providers/codex/sessions.js';
 import SessionHistoryService from '../src/services/SessionHistoryService.js';
 
 const session: StoredSession = {
-  id: 'same-native-id', title: 'Existing external session', workingDirectory: '/outside/agentdex',
+  activity: 'unknown', id: 'same-native-id', title: 'Existing external session', workingDirectory: '/outside/agentdex',
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', archived: false,
 };
 
@@ -62,4 +62,18 @@ test('Codex discovery reports process exits and protocol errors', async (t) => {
   const invalid = path.join(directory, 'invalid');
   await writeFile(invalid, `#!${process.execPath}\nprocess.stdin.on('data', () => process.stdout.write('invalid JSON\\n'));\n`, { mode: 0o755 });
   await assert.rejects(listCodexSessions(invalid), /invalid discovery response/);
+});
+
+test('invalidation does not reuse discovery begun before deletion', async () => {
+  const completions: (() => void)[] = [];
+  const history = new SessionHistoryService(new ProviderRegistry([{ ...codex, listSessions: () => new Promise((resolve) => { completions.push(() => resolve([])); }) }]));
+  const old = history.list();
+  history.invalidate();
+  const fresh = history.list();
+  assert.notEqual(old, fresh);
+  completions[0]!();
+  await old;
+  assert.equal(history.list(), fresh);
+  completions[1]!();
+  await fresh;
 });

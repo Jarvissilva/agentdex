@@ -8,7 +8,9 @@ import { spawn } from 'node-pty';
 import headless from '@xterm/headless';
 import serialize from '@xterm/addon-serialize';
 import type { Session } from '@agentdex/shared';
+import { terminalColors } from '@agentdex/shared/terminal-theme.js';
 import type { SessionRuntime } from '../models/Session.js';
+import trackTaskActivity from '../lib/taskActivity.js';
 import HttpError from '../lib/HttpError.js';
 import ProviderRegistry from '../lib/providers/index.js';
 import resolveExecutable from '../lib/resolveExecutable.js';
@@ -17,30 +19,68 @@ const { Terminal } = headless;
 const { SerializeAddon } = serialize;
 
 export default class SessionService {
-  private current: SessionRuntime | null = null;
-  private launching = false;
+  private readonly runtimes = new Map<string, SessionRuntime>();
+  private readonly launching = new Map<string, number>();
+  private readonly resuming = new Map<string, { provider: string; operation: Promise<Session> }>();
+  private readonly deleting = new Set<string>();
 
   constructor(private readonly providers = new ProviderRegistry()) {}
 
   get session(): Session | null {
-    return this.current ? { ...this.current.info } : null;
+    const latest = [...this.runtimes.values()].at(-1);
+    return latest ? { ...latest.info } : null;
+  }
+
+  get sessions(): Session[] {
+    return [...this.runtimes.values()].map((runtime) => ({ ...runtime.info }));
   }
 
   getRuntime(id: string): SessionRuntime {
-    if (!this.current || this.current.info.id !== id) throw new HttpError(404, 'Session not found.');
-    return this.current;
+    const runtime = this.runtimes.get(id);
+    if (!runtime) throw new HttpError(404, 'Session not found.');
+    return runtime;
   }
 
-  async create(workingDirectory: unknown, providerId?: unknown): Promise<Session> {
+  async create(workingDirectory: unknown, providerId?: unknown, resumeSessionId?: unknown): Promise<Session> {
     const provider = this.providers.get(providerId);
-    if (this.launching || this.current?.info.status === 'running') {
-      throw new HttpError(409, 'Stop the current session before launching another.');
+    if (resumeSessionId === undefined) return this.launch(workingDirectory, provider.id);
+    if (typeof resumeSessionId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(resumeSessionId)) {
+      throw new HttpError(400, 'Invalid saved session ID.');
     }
-    this.launching = true;
+    const existing = this.sessions.find((session) => session.provider === provider.id && session.providerSessionId === resumeSessionId && session.status === 'running');
+    if (existing) return existing;
+    const key = JSON.stringify([provider.id, resumeSessionId]);
+    const pending = this.resuming.get(key);
+    if (pending) return pending.operation;
+    const operation = (async () => {
+      if (!provider.getResumeConfig) throw new HttpError(400, 'This provider does not support resuming saved sessions.');
+      const history = await provider.listSessions().catch((error: unknown) => {
+        throw new HttpError(502, error instanceof Error ? error.message : 'Unable to find saved sessions.');
+      });
+      const saved = history.find((session) => session.id === resumeSessionId);
+      if (!saved) throw new HttpError(404, 'Saved session not found. Refresh the sessions explorer.');
+      return this.launch(saved.workingDirectory, provider.id, resumeSessionId);
+    })();
+    this.resuming.set(key, { provider: provider.id, operation });
+    try { return await operation; }
+    finally { this.resuming.delete(key); }
+  }
+
+  private async launch(workingDirectory: unknown, providerId: string, providerSessionId?: string): Promise<Session> {
+    const provider = this.providers.get(providerId);
+    if (this.deleting.has(provider.id)) {
+      throw new HttpError(409, 'Wait for the provider session deletion to finish before launching.');
+    }
+    this.launching.set(provider.id, (this.launching.get(provider.id) ?? 0) + 1);
     try {
       const cwd = await this.resolveDirectory(workingDirectory);
-      const launch = provider.getLaunchConfig(cwd);
-      const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...launch.env };
+      const launch = providerSessionId ? provider.getResumeConfig?.(cwd, providerSessionId) : provider.getLaunchConfig(cwd);
+      if (!launch) throw new HttpError(400, 'This provider does not support resuming saved sessions.');
+      const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+      // An interactive PTY supports color even if the server was launched by a
+      // runner that disables colors for its own logs. Preserve provider overrides.
+      delete env.NO_COLOR;
+      Object.assign(env, launch.env);
       const executable = await resolveExecutable(launch.executable, env.PATH);
       if (!executable) throw new HttpError(503, `${provider.name} was not found. ${provider.installationHint}`);
       let child;
@@ -52,18 +92,31 @@ export default class SessionService {
       } catch {
         throw new HttpError(503, `Unable to start ${provider.name}. ${provider.installationHint}`);
       }
-      this.current?.terminal.dispose();
       const terminal = new Terminal({ cols: 120, rows: 32, scrollback: 2000, allowProposedApi: true });
+      // Providers probe colors during startup, often before any browser connects.
+      // Headless xterm parses OSC but has no renderer to answer these queries.
+      for (const command of [10, 11, 12] as const) {
+        const color = terminalColors[command].slice(1).match(/../g)!.map((channel) => channel.repeat(2)).join('/');
+        terminal.parser.registerOscHandler(command, (data) => {
+          if (data !== '?') return false;
+          child.write(`\x1b]${command};rgb:${color}\x1b\\`);
+          return true;
+        });
+      }
       const serializer = new SerializeAddon();
       terminal.loadAddon(serializer);
       const runtime: SessionRuntime = {
-        info: { id: randomUUID(), provider: provider.id, workingDirectory: cwd, status: 'running', startedAt: new Date().toISOString(), exitCode: null },
+        info: { id: randomUUID(), ...(providerSessionId ? { providerSessionId } : {}), provider: provider.id, workingDirectory: cwd, status: 'running', taskActivity: 'unknown', startedAt: new Date().toISOString(), exitCode: null },
         process: child, terminal, serializer, events: new EventEmitter(),
       };
-      this.current = runtime;
+      const clearActivity = ['codex', 'opencode', 'agy'].includes(provider.id)
+        ? trackTaskActivity(terminal, (data) => child.write(data), (activity) => { runtime.info.taskActivity = activity; })
+        : () => {};
+      this.runtimes.set(runtime.info.id, runtime);
       child.onData((output) => terminal.write(output, () => runtime.events.emit('output', output)));
       child.onExit(({ exitCode }) => {
         terminal.write('', () => {
+          clearActivity();
           runtime.info.status = 'exited';
           runtime.info.exitCode = exitCode;
           runtime.events.emit('exit', { ...runtime.info });
@@ -71,8 +124,19 @@ export default class SessionService {
       });
       return { ...runtime.info };
     } finally {
-      this.launching = false;
+      const remaining = (this.launching.get(provider.id) ?? 1) - 1;
+      if (remaining) this.launching.set(provider.id, remaining);
+      else this.launching.delete(provider.id);
     }
+  }
+
+  async deleteHistory(provider: string, operation: () => Promise<void>): Promise<void> {
+    this.providers.get(provider);
+    if ([...this.resuming.values()].some((entry) => entry.provider === provider) || this.launching.has(provider) || this.deleting.has(provider) || this.sessions.some((session) => session.provider === provider && session.status === 'running')) {
+      throw new HttpError(409, 'Stop the provider terminal before deleting saved sessions, or wait for the current operation.');
+    }
+    this.deleting.add(provider);
+    try { await operation(); } finally { this.deleting.delete(provider); }
   }
 
   stop(id: string): void {
@@ -88,8 +152,10 @@ export default class SessionService {
   }
 
   shutdown(): void {
-    if (this.current?.info.status === 'running') {
-      try { this.current.process.kill('SIGKILL'); } catch { /* Process already exited. */ }
+    for (const runtime of this.runtimes.values()) {
+      if (runtime.info.status === 'running') {
+        try { runtime.process.kill('SIGKILL'); } catch { /* Process already exited. */ }
+      }
     }
   }
 

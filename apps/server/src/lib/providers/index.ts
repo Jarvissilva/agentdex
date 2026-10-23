@@ -1,8 +1,8 @@
 import type { Provider } from '@agentdex/shared';
 import HttpError from '../HttpError.js';
-import codex from './codex.js';
-import agy from './agy.js';
-import opencode from './opencode.js';
+import codex from './codex/index.js';
+import agy from './agy/index.js';
+import opencode from './opencode/index.js';
 import type { ProviderAdapter } from './types.js';
 
 export default class ProviderRegistry {

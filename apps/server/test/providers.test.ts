@@ -5,10 +5,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import ProviderRegistry from '../src/lib/providers/index.js';
-import agy from '../src/lib/providers/agy.js';
-import opencode from '../src/lib/providers/opencode.js';
-import listAntigravitySessions from '../src/lib/providers/agySessions.js';
-import listOpenCodeSessions from '../src/lib/providers/opencodeSessions.js';
+import agy from '../src/lib/providers/agy/index.js';
+import opencode from '../src/lib/providers/opencode/index.js';
+import listAntigravitySessions from '../src/lib/providers/agy/sessions.js';
+import listOpenCodeSessions from '../src/lib/providers/opencode/sessions.js';
 
 test('registers all three providers and retains Codex as the default', () => {
   const registry = new ProviderRegistry();

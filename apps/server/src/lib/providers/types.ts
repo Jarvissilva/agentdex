@@ -9,5 +9,8 @@ export interface ProviderLaunchConfig {
 export interface ProviderAdapter extends Provider {
   installationHint: string;
   getLaunchConfig(workingDirectory: string): ProviderLaunchConfig;
+  getResumeConfig?(workingDirectory: string, sessionId: string): ProviderLaunchConfig;
+  renameSession?(id: string, title: string): Promise<void>;
+  deleteSession(id: string): Promise<void>;
   listSessions(): Promise<StoredSession[]>;
 }

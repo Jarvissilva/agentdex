@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { StoredSession } from '@agentdex/shared';
-import resolveExecutable from '../resolveExecutable.js';
+import resolveExecutable from '../../resolveExecutable.js';
 
 const execute = promisify(execFile);
 
@@ -27,6 +27,8 @@ function parseSession(value: unknown, archived: boolean): StoredSession {
     workingDirectory: value.location.directory,
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
+    activity: 'unknown',
+    ...('parentID' in value && typeof value.parentID === 'string' ? { parentId: value.parentID } : {}),
     archived,
   };
 }
@@ -73,5 +75,40 @@ export default async function listOpenCodeSessions(command: string): Promise<Sto
       }
     } while (cursor !== null);
   }
-  return [...sessions.values()];
+  let active: Set<string> | undefined;
+  try {
+    const { stdout } = await execute(executable, ['api', 'get', '/api/session/active'], {
+      encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024,
+    });
+    const result: unknown = JSON.parse(stdout);
+    if (!result || typeof result !== 'object' || !('data' in result) || !result.data
+      || typeof result.data !== 'object' || Array.isArray(result.data)
+      || !Object.values(result.data).every((entry: unknown) => entry && typeof entry === 'object' && 'type' in entry && entry.type === 'running')) {
+      throw new Error('Invalid active-session response.');
+    }
+    active = new Set(Object.keys(result.data));
+  } catch { /* Activity failure must not hide saved history. */ }
+  return [...sessions.values()].map((session) => ({ ...session, activity: active ? active.has(session.id) ? 'active' : 'inactive' : 'unknown' }));
+}
+
+export async function deleteOpenCodeSession(command: string, id: string): Promise<void> {
+  const executable = await resolveExecutable(command, process.env.PATH);
+  if (!executable) throw new Error('OpenCode was not found. Check OPENCODE_BIN.');
+  try {
+    await execute(executable, ['session', 'delete', id], { timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+  } catch {
+    throw new Error('Unable to delete OpenCode session. Check the CLI and local service, then retry.');
+  }
+}
+
+export async function renameOpenCodeSession(command: string, id: string, title: string): Promise<void> {
+  const executable = await resolveExecutable(command, process.env.PATH);
+  if (!executable) throw new Error('OpenCode was not found. Check OPENCODE_BIN.');
+  try {
+    await execute(executable, ['api', 'post', `/api/session/${encodeURIComponent(id)}/rename`, '--data', JSON.stringify({ title })], {
+      timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
+    });
+  } catch {
+    throw new Error('Unable to rename OpenCode session. Check the CLI and local service, then retry.');
+  }
 }

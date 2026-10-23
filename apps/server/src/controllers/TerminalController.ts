@@ -41,7 +41,7 @@ export default function attachTerminals(server: Server, sessions: SessionService
       });
       runtime.terminal.write('', () => {
         if (client.readyState !== WebSocket.OPEN) return;
-        send({ type: 'snapshot', data: runtime.serializer.serialize(), session: { ...runtime.info } });
+        send({ type: 'snapshot', data: runtime.serializer.serialize(), cols: runtime.terminal.cols, rows: runtime.terminal.rows, session: { ...runtime.info } });
         if (runtime.info.status === 'exited') { client.close(1000, 'Session exited.'); return; }
         runtime.events.on('output', output);
         runtime.events.on('exit', exit);

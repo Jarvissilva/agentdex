@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import headless from '@xterm/headless';
+import type { Session } from '@agentdex/shared';
+import trackTaskActivity from '../src/lib/taskActivity.js';
+
+test('OSC activity parses chunks, terminators, records, clears and resets', async () => {
+  const terminal = new headless.Terminal({ allowProposedApi: true });
+  const replies: string[] = [];
+  let activity: Session['taskActivity'] = 'unknown';
+  const clear = trackTaskActivity(terminal, (reply) => replies.push(reply), (value) => { activity = value; });
+  const write = (value: string) => new Promise<void>((resolve) => terminal.write(value, resolve));
+  const report = (value: string) => write(`\x1b]7501;${value}\x07`);
+  await write('\x1b]7501;?\x07\x1b]7501;?\x1b\\');
+  assert.equal(replies.length, 2);
+  assert(replies.every((reply) => reply === '\x1b]7501;?\x1b\\'));
+  assert.equal(activity, 'unknown');
+  await write('ordinary output, waiting for input');
+  assert.equal(activity, 'unknown');
+  await write('\x1b]7501;state=work');
+  assert.equal(activity, 'unknown');
+  await write('ing:id=build/tests\x1b');
+  await write('\\');
+  assert.equal(activity, 'running');
+  await report('state=blocked');
+  assert.equal(activity, 'needs-input');
+  await report('state=clear');
+  assert.equal(activity, 'unknown');
+  await report('state=blocked:id=approval');
+  await report('state=working:id=build/tests');
+  assert.equal(activity, 'needs-input');
+  await report('state=clear:id=approval');
+  assert.equal(activity, 'running');
+  await report('state=blocked');
+  await report('state=done:id=build/tests');
+  assert.equal(activity, 'needs-input');
+  for (const state of ['idle', 'blocked', 'done', 'error']) {
+    await report(`state=${state}`);
+    assert.equal(activity, state === 'blocked' ? 'needs-input' : 'not-running');
+  }
+  for (const invalid of ['state=nope', 'msg=hello', 'state=working:id=bad//id', `state=working:app=${'x'.repeat(33)}`, 'state=working:msg=A===', 'state=working:msg=Cg==']) {
+    await report(invalid);
+    assert.equal(activity, 'not-running');
+  }
+  await report('state=working:id=builder');
+  await report('state=working:id=build/tests');
+  await report('state=clear:id=build');
+  assert.equal(activity, 'running');
+  await report('state=clear:id=builder');
+  assert.equal(activity, 'not-running');
+  await report('state=clear');
+  assert.equal(activity, 'unknown');
+  await report('state=working:state=idle');
+  assert.equal(activity, 'not-running');
+  await report('state=working:malformed:future=value');
+  assert.equal(activity, 'running');
+  await write('\x1b[!p');
+  assert.equal(activity, 'running');
+  await write('\x1bc');
+  assert.equal(activity, 'unknown');
+  await report('state=working');
+  terminal.reset();
+  assert.equal(activity, 'unknown');
+  await report('state=working:id=old');
+  for (let index = 0; index < 256; index++) await report(`state=idle:id=item${index}`);
+  assert.equal(activity, 'not-running');
+  await report('state=working');
+  clear();
+  assert.equal(activity, 'unknown');
+  terminal.dispose();
+});

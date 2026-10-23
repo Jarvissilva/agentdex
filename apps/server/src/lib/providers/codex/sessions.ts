@@ -1,7 +1,11 @@
+import { homedir } from 'node:os';
+import path from 'node:path';
+import HttpError from '../../HttpError.js';
+import { lockActivity } from '../activity.js';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { StoredSession } from '@agentdex/shared';
-import resolveExecutable from '../resolveExecutable.js';
+import resolveExecutable from '../../resolveExecutable.js';
 
 const sourceKinds = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
 
@@ -26,11 +30,13 @@ function parseThread(value: unknown, archived: boolean): StoredSession {
     workingDirectory: value.cwd,
     createdAt: new Date(value.createdAt * 1000).toISOString(),
     updatedAt: new Date(value.updatedAt * 1000).toISOString(),
+    activity: 'unknown',
+    ...('forkedFromId' in value && typeof value.forkedFromId === 'string' ? { parentId: value.forkedFromId } : {}),
     archived,
   };
 }
 
-export default async function listCodexSessions(command: string): Promise<StoredSession[]> {
+export default async function listCodexSessions(command: string, sessionId?: string, title?: string): Promise<StoredSession[]> {
   const executable = await resolveExecutable(command, process.env.PATH);
   if (!executable) throw new Error('Codex was not found. Install Codex or set CODEX_BIN to its executable path.');
   const child = spawn(executable, ['app-server', '--listen', 'stdio://'], { stdio: ['pipe', 'pipe', 'ignore'] });
@@ -53,7 +59,16 @@ export default async function listCodexSessions(command: string): Promise<Stored
       const request = pending.get(message.id);
       if (!request) return;
       pending.delete(message.id);
-      if ('error' in message) request.reject(new Error('Codex could not list stored sessions. Check your CLI version and configuration.'));
+      if ('error' in message) {
+        const error = message.error;
+        const detail = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message : 'Check your CLI version and configuration.';
+        if (sessionId && title === undefined && /active[ -]writer/i.test(detail)) {
+          request.reject(new HttpError(409, 'Codex has an active writer for this session. Close it in Codex before deleting, then refresh and retry.'));
+          return;
+        }
+        request.reject(new Error(`Codex could not complete the session operation: ${detail}`));
+      }
       else if ('result' in message) request.resolve(message.result);
       else request.reject(new Error('Codex returned an invalid discovery response.'));
     } catch { fail(new Error('Codex returned an invalid discovery response.')); }
@@ -73,6 +88,11 @@ export default async function listCodexSessions(command: string): Promise<Stored
   try {
     await request('initialize', { clientInfo: { name: 'agentdex', version: '0.0.0' } });
     child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n`);
+    if (sessionId) {
+      if (title === undefined) await request('thread/delete', { threadId: sessionId });
+      else await request('thread/name/set', { threadId: sessionId, name: title });
+      return [];
+    }
     const sessions = new Map<string, StoredSession>();
     for (const archived of [false, true]) {
       let cursor: string | null = null;
@@ -94,7 +114,9 @@ export default async function listCodexSessions(command: string): Promise<Stored
         }
       } while (cursor !== null);
     }
-    return [...sessions.values()];
+    const entries = [...sessions.values()];
+    const activity = await lockActivity(entries.map(({ id }) => path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'thread-writer-locks', `${id}.lock`)));
+    return entries.map((entry, index) => ({ ...entry, activity: activity[index]! }));
   } finally {
     clearTimeout(timeout);
     lines.close();
