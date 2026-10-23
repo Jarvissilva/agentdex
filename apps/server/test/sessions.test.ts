@@ -484,3 +484,12 @@ for (const providerId of ['codex', 'opencode', 'agy']) {
     assert.equal(discoveries, before);
   });
 }
+
+test('native folder picker requires local authentication and validates input before opening a dialog', async (t) => {
+  const context = await setup();
+  t.after(context.cleanup);
+  const denied = await context.request('/sessions/pick-directory', 'POST', { workingDirectory: '/tmp' }, { ...context.headers, Cookie: '' });
+  assert.equal(denied.status, 403);
+  const invalid = await context.request('/sessions/pick-directory', 'POST', { workingDirectory: 42 });
+  assert.equal(invalid.status, 400);
+});

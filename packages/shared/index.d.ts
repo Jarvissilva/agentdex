@@ -35,6 +35,8 @@ export interface SessionsResponse {
 }
 
 export interface StoredSession {
+  /** Provider-reported task state, separate from process/writer presence. */
+  taskActivity?: Session['taskActivity'];
   activity: 'active' | 'inactive' | 'unknown';
   parentId?: string;
   id: string;
@@ -54,7 +56,7 @@ export interface ApiError {
 }
 
 export type TerminalClientMessage =
-  | { type: 'input'; data: string }
+  | { type: 'input'; data: string; encoding?: 'binary' }
   | { type: 'resize'; cols: number; rows: number };
 
 export type TerminalServerMessage =

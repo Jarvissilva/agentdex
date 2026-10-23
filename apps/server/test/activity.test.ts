@@ -10,6 +10,8 @@ import SessionHistoryService from '../src/services/SessionHistoryService.js';
 import ProviderRegistry from '../src/lib/providers/index.js';
 import codex from '../src/lib/providers/codex/index.js';
 import HttpError from '../src/lib/HttpError.js';
+import { codexTaskActivity } from '../src/lib/providers/codex/sessions.js';
+import { antigravityTaskActivity } from '../src/lib/providers/agy/sessions.js';
 import listCodexSessions from '../src/lib/providers/codex/sessions.js';
 import listOpenCodeSessions from '../src/lib/providers/opencode/sessions.js';
 
@@ -85,8 +87,61 @@ test('Codex activity uses the configured CODEX_HOME and counts idle held writers
   t.after(() => { holder.kill(); });
   await once(holder.stdout, 'data');
   assert.equal((await listCodexSessions(command)).find((session) => session.id === 'first')?.activity, 'active');
+  const rollout = path.join(root, 'rollout.jsonl');
+  const event = (type: string) => JSON.stringify({type:'event_msg',payload:{type,turn_id:'turn'}}) + '\n';
+  await writeFile(rollout, event('task_started'));
+  await writeFile(command, fixture.replace('#!/usr/bin/env node', `#!${process.execPath}`)
+    .replace("name: null, preview:", `path: ${JSON.stringify(rollout)}, status: {type:'notLoaded'}, name: null, preview:`), { mode: 0o755 });
+  assert.equal((await listCodexSessions(command)).find((session) => session.id === 'first')?.taskActivity, 'running');
+  await writeFile(rollout, event('task_started') + event('task_complete'));
+  const completed = (await listCodexSessions(command)).find((session) => session.id === 'first');
+  assert.equal(completed?.activity, 'active'); // The external CLI still holds its writer lock.
+  assert.equal(completed?.taskActivity, 'not-running');
+
   const exited = once(holder, 'exit');
   holder.stdin.end();
   await exited;
   assert((await listCodexSessions(command)).every((session) => session.activity === 'inactive'));
+});
+
+test('Codex consumes explicit runtime status and never treats unloaded history as idle', () => {
+  for (const [status, expected] of [
+    [{ type: 'active', activeFlags: [] }, 'running'],
+    [{ type: 'active', activeFlags: ['waitingOnApproval'] }, 'needs-input'],
+    [{ type: 'active', activeFlags: ['waitingOnUserInput'] }, 'needs-input'],
+    [{ type: 'idle' }, 'not-running'],
+    [{ type: 'notLoaded' }, 'unknown'],
+    [{ type: 'systemError' }, 'unknown'],
+    [{ type: 'active', activeFlags: ['future-flag'] }, 'unknown'],
+    [null, 'unknown'],
+  ] as const) assert.equal(codexTaskActivity(status), expected);
+});
+
+test('Antigravity uses explicit summary states only while presence is live', () => {
+  for (const [status, expected] of [
+    ['CASCADE_RUN_STATUS_RUNNING', 'running'], ['CASCADE_RUN_STATUS_BUSY', 'running'],
+    ['CASCADE_RUN_STATUS_CANCELING', 'running'], ['CASCADE_RUN_STATUS_IDLE', 'not-running'],
+    ['', 'unknown'], ['future-state', 'unknown'],
+  ] as const) {
+    assert.equal(antigravityTaskActivity(status, 'active', 0), expected);
+    assert.equal(antigravityTaskActivity(status, 'inactive', 0), 'unknown');
+    assert.equal(antigravityTaskActivity(status, 'unknown', 0), 'unknown');
+    assert.equal(antigravityTaskActivity(status, 'active', 1), 'unknown');
+  }
+});
+
+test('OpenCode pending permission requests become Needs input without affecting other sessions', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'agentdex-input-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const command = path.join(root, 'opencode');
+  await writeFile(command, `#!${process.execPath}
+const endpoint = process.argv[4];
+if (endpoint === '/api/session/active') console.log(JSON.stringify({data:{one:{type:'running'}}}));
+else if (endpoint === '/api/permission/request') console.log(JSON.stringify({data:[{sessionID:'one'},{sessionID:'unlisted'}]}));
+else console.log(JSON.stringify({data:['one','two'].map(id=>({id,location:{directory:'/x'},time:{created:1,updated:2}})),cursor:{}}));
+`, { mode: 0o755 });
+  const sessions = await listOpenCodeSessions(command);
+  assert.equal(sessions.find((session) => session.id === 'one')?.taskActivity, 'needs-input');
+  assert.equal(sessions.find((session) => session.id === 'one')?.activity, 'active');
+  assert.equal(sessions.find((session) => session.id === 'two')?.taskActivity, 'not-running');
 });

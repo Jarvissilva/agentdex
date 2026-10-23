@@ -1,3 +1,4 @@
+import trackMouseEncoding from '../lib/terminalMouse.js';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { access, realpath, stat } from 'node:fs/promises';
@@ -107,7 +108,7 @@ export default class SessionService {
       terminal.loadAddon(serializer);
       const runtime: SessionRuntime = {
         info: { id: randomUUID(), ...(providerSessionId ? { providerSessionId } : {}), provider: provider.id, workingDirectory: cwd, status: 'running', taskActivity: 'unknown', startedAt: new Date().toISOString(), exitCode: null },
-        process: child, terminal, serializer, events: new EventEmitter(),
+        process: child, terminal, serializer, mouseEncoding: trackMouseEncoding(terminal), events: new EventEmitter(),
       };
       const clearActivity = ['codex', 'opencode', 'agy'].includes(provider.id)
         ? trackTaskActivity(terminal, (data) => child.write(data), (activity) => { runtime.info.taskActivity = activity; })

@@ -105,7 +105,7 @@ export default function Sessions() {
     const refresh = () => {
       if (document.visibilityState === 'visible' && refreshState === 'idle') void revalidate();
     };
-    const interval = setInterval(refresh, 15000);
+    const interval = setInterval(refresh, 3000);
     document.addEventListener('visibilitychange', refresh);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', refresh); };
   }, [revalidate, refreshState]);
@@ -208,7 +208,8 @@ export default function Sessions() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {actionData?.error && <p role="alert" className="p-3 text-sm text-destructive">{actionData.error}</p>}
         <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center overflow-x-auto border-b border-border bg-sidebar">
+          <div className="flex min-w-0 shrink-0 items-center border-b border-border bg-sidebar">
+            <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
             <Tabs.List aria-label="Session tabs" className="flex shrink-0 items-center">
               {visibleSessions.map((session) => {
                 const name = providers.find((provider) => provider.id === session.provider)?.name ?? session.provider;
@@ -226,6 +227,11 @@ export default function Sessions() {
               })}
             </Tabs.List>
             <Button type="button" variant="ghost" size="icon" aria-label="New session" title="New session" onClick={() => setCreating(true)}><Plus aria-hidden="true" /></Button>
+            </div>
+            {selectedSession?.status === 'running' && <Form method="post" className="shrink-0 border-l border-border">
+              <input type="hidden" name="sessionId" value={selectedSession.id} />
+              <Button type="submit" name="intent" value="stop" variant="ghost" size="icon" disabled={pending} aria-label="Stop session" title="Stop session"><Square aria-hidden="true" /></Button>
+            </Form>}
           </div>
           {!selectedSession && <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
             <h2 className="text-lg font-medium">Your coding workspace</h2>
@@ -241,12 +247,6 @@ export default function Sessions() {
                   <SessionTerminal
                     sessionId={session.id}
                     providerName={providerName}
-                    activityLabel={session.status === 'running' ? sessionActivity(session).label : `Exited · code ${session.exitCode ?? 'unknown'}`}
-                    workingDirectory={session.workingDirectory}
-                    controls={session.status === 'running' && <Form method="post" className="shrink-0">
-                      <input type="hidden" name="sessionId" value={session.id} />
-                      <Button type="submit" name="intent" value="stop" variant="outline" size="sm" disabled={pending}><Square aria-hidden="true" />Stop session</Button>
-                    </Form>}
                     onExit={onExit}
                   />
                 </Suspense>

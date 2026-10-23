@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import pickDirectory from '../src/lib/pickDirectory.js';
+
+test('native directory picker preserves paths, handles cancellation and failures, and prevents duplicate dialogs', async (t) => {
+  if (process.platform !== 'linux') return;
+  const root = await mkdtemp(path.join(tmpdir(), 'agentdex-picker-'));
+  const previousPath = process.env.PATH;
+  process.env.PATH = root;
+  t.after(async () => { process.env.PATH = previousPath; await rm(root, { recursive: true, force: true }); });
+  const selected = path.join(root, 'folder with spaces and $characters');
+  await mkdir(selected);
+  const executable = path.join(root, 'zenity');
+  await writeFile(executable, `#!${process.execPath}
+const assert = require('node:assert/strict');
+assert(process.argv.includes('--directory'));
+assert(process.argv.includes(${JSON.stringify('--filename=' + selected + path.sep)}));
+console.log(${JSON.stringify(selected)});
+`, { mode: 0o755 });
+  assert.equal(await pickDirectory(selected), selected);
+  await writeFile(executable, `#!${process.execPath}\nprocess.exit(1);\n`, { mode: 0o755 });
+  assert.equal(await pickDirectory(selected), null);
+  await writeFile(executable, `#!${process.execPath}\nconsole.error('cannot open display');process.exit(1);\n`, { mode: 0o755 });
+  await assert.rejects(pickDirectory(selected), { status: 503 });
+  await writeFile(executable, `#!${process.execPath}\nprocess.exit(2);\n`, { mode: 0o755 });
+  await assert.rejects(pickDirectory(selected), { status: 503 });
+  await writeFile(executable, `#!${process.execPath}\nconsole.log('/nonexistent/picker/directory');\n`, { mode: 0o755 });
+  await assert.rejects(pickDirectory(selected), { status: 400 });
+  await writeFile(executable, `#!${process.execPath}\nsetTimeout(()=>{},10000);\n`, { mode: 0o755 });
+  const controller = new AbortController();
+  const pending = pickDirectory(selected, controller.signal);
+  await assert.rejects(pickDirectory(selected), { status: 409 });
+  controller.abort();
+  await assert.rejects(pending, { status: 503 });
+  await rm(executable);
+  await assert.rejects(pickDirectory(selected), { status: 503 });
+  await assert.rejects(pickDirectory(42), { status: 400 });
+});

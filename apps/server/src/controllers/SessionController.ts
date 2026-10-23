@@ -1,4 +1,5 @@
 import HttpError from '../lib/HttpError.js';
+import pickDirectory from '../lib/pickDirectory.js';
 import { homedir } from 'node:os';
 import type { Request, Response } from 'express';
 import type SessionService from '../services/SessionService.js';
@@ -14,6 +15,16 @@ export default class SessionController {
 
   managed = (_request: Request, response: Response) => {
     response.json({ managedSessions: this.sessions.sessions });
+  };
+
+  pickDirectory = async (request: Request, response: Response) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    response.once('close', abort);
+    try {
+      const directory = await pickDirectory(request.body?.workingDirectory ?? this.defaultWorkingDirectory, controller.signal);
+      if (!response.destroyed) response.json({ directory });
+    } finally { response.off('close', abort); }
   };
 
   create = async (request: Request, response: Response) => {

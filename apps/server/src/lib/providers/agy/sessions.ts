@@ -5,7 +5,15 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import type { StoredSession } from '@agentdex/shared';
+import type { Session, StoredSession } from '@agentdex/shared';
+
+export function antigravityTaskActivity(status: unknown, presence: StoredSession['activity'], killed: unknown): Session['taskActivity'] {
+  // Persisted summaries may outlive the process that produced them.
+  if (presence !== 'active' || killed === 1) return 'unknown';
+  if (status === 'CASCADE_RUN_STATUS_IDLE') return 'not-running';
+  if (status === 'CASCADE_RUN_STATUS_RUNNING' || status === 'CASCADE_RUN_STATUS_BUSY' || status === 'CASCADE_RUN_STATUS_CANCELING') return 'running';
+  return 'unknown';
+}
 
 function workspaceDirectory(value: string): string {
   if (!value.trim()) return '';
@@ -46,6 +54,7 @@ export default async function listAntigravitySessions(
         createdAt: null,
         updatedAt: new Date(row.last_modified_time.replace(' ', 'T')).toISOString(),
         activity: activity[index]!,
+        taskActivity: antigravityTaskActivity(row.status, activity[index]!, row.killed),
         archived: false,
       };
     });

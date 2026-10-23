@@ -7,14 +7,16 @@ export function sessionActivity(session: Session) {
   return { label, needsInput: session.status === 'running' && session.taskActivity === 'needs-input', running: session.status === 'running' && (session.taskActivity === 'running' || session.taskActivity === 'unknown') };
 }
 
-// Writer/presence locks prove ownership, not that an external agent is working.
+// A live managed terminal is authoritative when it supplies an explicit task state.
+// Otherwise use provider telemetry, then fall back to confirmed process presence.
 export function savedSessionActivity(session: ProviderSession, terminal?: Session) {
-  if (terminal?.status === 'running') {
-    const activity = sessionActivity(terminal);
-    return activity.needsInput ? 'needs-input' : activity.running ? 'active' : terminal.taskActivity === 'not-running' ? 'inactive' : 'unknown';
-  }
-  if (session.activity === 'inactive') return 'inactive';
-  return session.provider === 'opencode' ? session.activity : 'unknown';
+  const live = terminal?.status === 'running';
+  const task = live && terminal.taskActivity !== 'unknown' ? terminal.taskActivity : session.taskActivity;
+  if (task === 'needs-input') return 'needs-input';
+  if (task === 'running') return 'active';
+  if (task === 'not-running') return 'inactive';
+  if (live) return 'active';
+  return session.activity;
 }
 
 export type SavedSessionRow = ProviderSession & { kind: 'saved'; terminal?: Session };

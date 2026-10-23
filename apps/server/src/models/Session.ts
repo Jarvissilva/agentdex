@@ -9,5 +9,6 @@ export interface SessionRuntime {
   process: IPty;
   terminal: Terminal;
   serializer: SerializeAddon;
+  mouseEncoding: () => string;
   events: EventEmitter;
 }

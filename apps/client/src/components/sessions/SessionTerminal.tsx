@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -9,13 +9,10 @@ import '@xterm/xterm/css/xterm.css';
 interface Props {
   sessionId: string;
   providerName: string;
-  activityLabel: string;
-  workingDirectory: string;
-  controls: ReactNode;
   onExit: () => void;
 }
 
-export default function SessionTerminal({ sessionId, providerName, activityLabel, workingDirectory, controls, onExit }: Props) {
+export default function SessionTerminal({ sessionId, providerName, onExit }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState('Connecting…');
 
@@ -125,6 +122,7 @@ export default function SessionTerminal({ sessionId, providerName, activityLabel
     };
 
     const input = terminal.onData((value) => send({ type: 'input', data: value }));
+    const binaryInput = terminal.onBinary((value) => send({ type: 'input', data: value, encoding: 'binary' }));
     const observer = new ResizeObserver(resize);
     observer.observe(container.current);
     void document.fonts.ready.then(() => {
@@ -141,6 +139,7 @@ export default function SessionTerminal({ sessionId, providerName, activityLabel
       observer.disconnect();
       document.fonts.removeEventListener('loadingdone', resize);
       input.dispose();
+      binaryInput.dispose();
       socket?.close();
       terminal.dispose();
     };
@@ -148,15 +147,7 @@ export default function SessionTerminal({ sessionId, providerName, activityLabel
 
   return (
     <div className="flex min-h-48 flex-1 flex-col overflow-hidden rounded border border-border bg-background">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2 text-xs leading-5 text-muted-foreground">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-          {connection !== 'Connected' && !connection.startsWith('Session ended') && <span role="status">{connection}</span>}
-          <span className="shrink-0 font-medium text-foreground">{providerName}</span>
-          <span className="shrink-0">{activityLabel}</span>
-          <span className="min-w-0 basis-40 flex-1 self-center break-all font-mono">{workingDirectory}</span>
-        </div>
-        {controls}
-      </div>
+      {connection !== 'Connected' && !connection.startsWith('Session ended') && <div role="status" className="shrink-0 border-b border-border px-4 py-2 text-xs text-muted-foreground">{connection}</div>}
       <div ref={container} aria-label={`${providerName} terminal`} className="min-h-0 flex-1 p-2" />
     </div>
   );

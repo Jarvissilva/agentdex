@@ -4,14 +4,23 @@ import HttpError from '../../HttpError.js';
 import { lockActivity } from '../activity.js';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import type { StoredSession } from '@agentdex/shared';
+import type { Session, StoredSession } from '@agentdex/shared';
 import resolveExecutable from '../../resolveExecutable.js';
+import { codexRolloutActivity } from './taskActivity.js';
 
 const sourceKinds = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
 
 interface PendingRequest {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
+}
+
+export function codexTaskActivity(status: unknown): Session['taskActivity'] {
+  if (!status || typeof status !== 'object' || !('type' in status)) return 'unknown';
+  if (status.type === 'idle') return 'not-running';
+  if (status.type !== 'active' || !('activeFlags' in status) || !Array.isArray(status.activeFlags)
+    || !status.activeFlags.every((flag: unknown) => flag === 'waitingOnApproval' || flag === 'waitingOnUserInput')) return 'unknown';
+  return status.activeFlags.length ? 'needs-input' : 'running';
 }
 
 function parseThread(value: unknown, archived: boolean): StoredSession {
@@ -31,6 +40,7 @@ function parseThread(value: unknown, archived: boolean): StoredSession {
     createdAt: new Date(value.createdAt * 1000).toISOString(),
     updatedAt: new Date(value.updatedAt * 1000).toISOString(),
     activity: 'unknown',
+    taskActivity: codexTaskActivity('status' in value ? value.status : undefined),
     ...('forkedFromId' in value && typeof value.forkedFromId === 'string' ? { parentId: value.forkedFromId } : {}),
     archived,
   };
@@ -94,6 +104,7 @@ export default async function listCodexSessions(command: string, sessionId?: str
       return [];
     }
     const sessions = new Map<string, StoredSession>();
+    const rolloutPaths = new Map<string, string>();
     for (const archived of [false, true]) {
       let cursor: string | null = null;
       const seenCursors = new Set<string>();
@@ -106,6 +117,7 @@ export default async function listCodexSessions(command: string, sessionId?: str
         for (const value of result.data) {
           const session = parseThread(value, archived);
           sessions.set(session.id, session);
+          if (value && typeof value === 'object' && 'path' in value && typeof value.path === 'string') rolloutPaths.set(session.id, value.path);
         }
         cursor = result.nextCursor;
         if (cursor !== null) {
@@ -116,7 +128,15 @@ export default async function listCodexSessions(command: string, sessionId?: str
     }
     const entries = [...sessions.values()];
     const activity = await lockActivity(entries.map(({ id }) => path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'thread-writer-locks', `${id}.lock`)));
-    return entries.map((entry, index) => ({ ...entry, activity: activity[index]! }));
+    return await Promise.all(entries.map(async (entry, index): Promise<StoredSession> => {
+      let taskActivity = entry.taskActivity;
+      const rollout = rolloutPaths.get(entry.id);
+      // Live API status wins. Stored turn events fill the cross-process gap.
+      if (taskActivity === 'unknown' && activity[index] === 'active' && rollout) {
+        taskActivity = await codexRolloutActivity(rollout);
+      }
+      return { ...entry, taskActivity, activity: activity[index]! };
+    }));
   } finally {
     clearTimeout(timeout);
     lines.close();

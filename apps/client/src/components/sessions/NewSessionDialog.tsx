@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FolderOpen } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useFetcher } from 'react-router';
 import type { Provider } from '@agentdex/shared';
 import type { sessionsAction } from '@/pages/Sessions';
@@ -21,7 +23,31 @@ export default function NewSessionDialog({ providers, defaultProviderId, default
     if (element && !element.open) element.showModal();
   }, []);
   const fetcher = useFetcher<typeof sessionsAction>();
-  const pending = fetcher.state !== 'idle';
+  const [workingDirectory, setWorkingDirectory] = useState(defaultWorkingDirectory);
+  const [picking, setPicking] = useState(false);
+  const [pickerError, setPickerError] = useState('');
+  const picker = useRef<AbortController | null>(null);
+  const pending = fetcher.state !== 'idle' || picking;
+  useEffect(() => () => picker.current?.abort(), []);
+
+  async function browse() {
+    if (picker.current) return;
+    const controller = new AbortController();
+    picker.current = controller;
+    setPicking(true);
+    setPickerError('');
+    try {
+      const result = await api<{ directory: string | null }>('/sessions/pick-directory', {
+        method: 'POST', body: JSON.stringify({ workingDirectory }), signal: controller.signal,
+      });
+      if (!controller.signal.aborted && result.directory !== null) setWorkingDirectory(result.directory);
+    } catch (error) {
+      if (!controller.signal.aborted) setPickerError(error instanceof Error ? error.message : 'Unable to open the folder picker. Enter a directory path.');
+    } finally {
+      picker.current = null;
+      if (!controller.signal.aborted) setPicking(false);
+    }
+  }
 
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data?.sessionId) onCreated(fetcher.data.sessionId);
@@ -46,14 +72,18 @@ export default function NewSessionDialog({ providers, defaultProviderId, default
         </div>
         <div className="space-y-2">
           <label htmlFor="new-session-directory" className="block text-sm font-medium">Working directory</label>
-          <input id="new-session-directory" name="workingDirectory" list="session-directories" defaultValue={defaultWorkingDirectory} placeholder="/absolute/path/to/project" required disabled={pending} spellCheck={false} autoComplete="off" aria-describedby="new-session-directory-hint" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <div className="flex min-w-0 items-center gap-2">
+            <input id="new-session-directory" name="workingDirectory" list="session-directories" value={workingDirectory} onChange={(event) => setWorkingDirectory(event.target.value)} placeholder="/absolute/path/to/project" required disabled={pending} spellCheck={false} autoComplete="off" aria-describedby="new-session-directory-hint" className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <Button type="button" variant="outline" className="h-10 shrink-0" disabled={pending} aria-label="Browse for working directory" onClick={() => { void browse(); }}><FolderOpen aria-hidden="true" />{picking ? 'Choosing…' : 'Browse'}</Button>
+          </div>
+          {pickerError && <p role="alert" className="text-sm text-destructive">{pickerError}</p>}
           <datalist id="session-directories">{directories.map((directory) => <option key={directory} value={directory} />)}</datalist>
           <p id="new-session-directory-hint" className="text-xs text-muted-foreground">Choose a recent directory or enter an absolute path. ~/path is supported.</p>
         </div>
         {fetcher.data?.error && <p role="alert" className="text-sm text-destructive">{fetcher.data.error}</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>Cancel</Button>
-          <Button type="submit" disabled={pending || !providers.length}>{pending ? 'Launching…' : 'Launch session'}</Button>
+          <Button type="submit" disabled={pending || !providers.length}>{fetcher.state !== 'idle' ? 'Launching…' : 'Launch session'}</Button>
         </div>
       </fetcher.Form>
     </dialog>

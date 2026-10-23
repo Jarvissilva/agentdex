@@ -88,7 +88,23 @@ export default async function listOpenCodeSessions(command: string): Promise<Sto
     }
     active = new Set(Object.keys(result.data));
   } catch { /* Activity failure must not hide saved history. */ }
-  return [...sessions.values()].map((session) => ({ ...session, activity: active ? active.has(session.id) ? 'active' : 'inactive' : 'unknown' }));
+  const needsInput = new Set<string>();
+  try {
+    const { stdout } = await execute(executable, ['api', 'get', '/api/permission/request'], {
+      encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024,
+    });
+    const result: unknown = JSON.parse(stdout);
+    if (result && typeof result === 'object' && 'data' in result && Array.isArray(result.data)) {
+      for (const entry of result.data) {
+        if (entry && typeof entry === 'object' && 'sessionID' in entry && typeof entry.sessionID === 'string') needsInput.add(entry.sessionID);
+      }
+    }
+  } catch { /* Older services may not expose pending permission requests. */ }
+  return [...sessions.values()].map((session): StoredSession => ({
+    ...session,
+    activity: needsInput.has(session.id) ? 'active' : active ? active.has(session.id) ? 'active' : 'inactive' : 'unknown',
+    taskActivity: needsInput.has(session.id) ? 'needs-input' : active ? active.has(session.id) ? 'running' : 'not-running' : 'unknown',
+  }));
 }
 
 export async function deleteOpenCodeSession(command: string, id: string): Promise<void> {

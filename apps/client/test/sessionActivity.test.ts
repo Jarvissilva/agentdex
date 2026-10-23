@@ -6,9 +6,9 @@ import { buildSessionRows, savedSessionActivity, sessionRowActivity, sessionRowK
 const saved: ProviderSession = { provider: 'codex', id: 'saved', title: '', workingDirectory: '/work', createdAt: null, updatedAt: '', archived: false, activity: 'active' };
 const terminal: Session = { provider: 'codex', id: 'terminal', providerSessionId: 'saved', workingDirectory: '/work', status: 'running', taskActivity: 'running', startedAt: '', exitCode: null };
 
-test('held writer/presence locks never imply a working external task', () => {
-  for (const provider of ['codex', 'agy']) {
-    assert.equal(savedSessionActivity({ ...saved, provider }), 'unknown');
+test('open sessions from every provider appear in Running without a managed terminal', () => {
+  for (const provider of ['codex', 'agy', 'opencode']) {
+    assert.equal(savedSessionActivity({ ...saved, provider }), 'active');
     assert.equal(savedSessionActivity({ ...saved, provider, activity: 'inactive' }), 'inactive');
     assert.equal(savedSessionActivity({ ...saved, provider, activity: 'unknown' }), 'unknown');
   }
@@ -55,8 +55,19 @@ test('deduplication requires exact provider and saved ID, never directory or tim
   assert.notEqual(sessionRowKey(rows[0]!), sessionRowKey(rows[1]!));
 });
 
-test('a live match wins over an exited terminal and external locks remain unknown', () => {
+test('a live match wins over an exited terminal and external presence remains visible', () => {
   const rows = buildSessionRows([saved], [terminal, { ...terminal, id: 'exited', status: 'exited' }], providers);
   assert.equal(sessionRowActivity(rows[0]!), 'active');
-  assert.equal(sessionRowActivity(buildSessionRows([saved], [], providers)[0]!), 'unknown');
+  assert.equal(sessionRowActivity(buildSessionRows([saved], [], providers)[0]!), 'active');
+});
+
+test('provider task signals apply across all providers and explicit managed signals take priority', () => {
+  for (const provider of ['codex', 'agy', 'opencode']) {
+    for (const [taskActivity, expected] of [['running', 'active'], ['needs-input', 'needs-input'], ['not-running', 'inactive'], ['unknown', 'active']] as const) {
+      const session = { ...saved, provider, taskActivity };
+      assert.equal(savedSessionActivity(session), expected);
+      assert.equal(savedSessionActivity(session, { ...terminal, taskActivity: 'unknown' }), expected);
+      assert.equal(savedSessionActivity(session, { ...terminal, taskActivity: 'not-running' }), 'inactive');
+    }
+  }
 });

@@ -3,7 +3,7 @@ import { ChevronRight, Folder, FolderOpen, LoaderCircle, Pencil, Trash2 } from '
 import { useRevalidator } from 'react-router';
 import { api, ApiRequestError } from '@/lib/api';
 import type { Provider, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
-import { buildSessionRows, sessionRowActivity, sessionRowKey, sessionActivity, type SessionListRow, type SessionStatusFilter } from '@/lib/sessionActivity';
+import { buildSessionRows, sessionRowActivity, sessionRowKey, type SessionListRow, type SessionStatusFilter } from '@/lib/sessionActivity';
 import RenameSessionDialog from './RenameSessionDialog';
 import { Button } from '@/components/ui/shadcn/button';
 
@@ -224,8 +224,6 @@ export default function SessionList({ sessions, managedSessions, providers, date
                 {!isCollapsed && <>
                   <ul className="space-y-1.5">
                     {group.slice(0, count).map((session) => {
-                      const terminal = session.terminal;
-                      const indicator = terminal?.status === 'running' ? sessionActivity(terminal) : null;
                       const status = effectiveActivity(session);
                       const statusLabel = status === 'active' ? 'Running' : status === 'needs-input' ? 'Needs input' : status === 'inactive' ? 'Ready' : 'Unknown';
                       const key = sessionRowKey(session);
@@ -257,8 +255,8 @@ export default function SessionList({ sessions, managedSessions, providers, date
                                 </span>
                                 <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
                                   <span title={session.id} className="truncate">{names.get(session.provider) ?? session.provider}{session.archived ? ' · Archived' : ''}</span>
-                                  <span title={indicator?.label ?? statusLabel} aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${status === 'needs-input' ? 'bg-amber-400' : status === 'active' ? 'bg-emerald-400' : status === 'inactive' ? 'bg-blue-400' : 'border border-muted-foreground'}`} />
-                                  <span className="sr-only">{indicator?.label ?? statusLabel}</span>
+                                  <span title={statusLabel} aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${status === 'needs-input' ? 'bg-amber-400' : status === 'active' ? 'bg-emerald-400' : status === 'inactive' ? 'bg-blue-400' : 'border border-muted-foreground'}`} />
+                                  <span className="sr-only">{statusLabel}</span>
                                   <time dateTime={session.updatedAt} title={new Date(session.updatedAt).toLocaleString()} className="ml-auto shrink-0 tabular-nums">{relativeTime(session.updatedAt, now)}</time>
                                 </span>
                               </span>
