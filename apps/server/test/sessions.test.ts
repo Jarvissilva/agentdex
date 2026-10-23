@@ -42,19 +42,19 @@ function send(url: string, method: string, headers: Record<string, string>, body
   });
 }
 
-async function setup(adapters: ProviderAdapter[] = [fixtureProvider]) {
+async function setup(adapters: ProviderAdapter[] = [fixtureProvider], browserOrigin = origin, useDefaultOrigins = false) {
   const directory = await mkdtemp(path.join(tmpdir(), 'agentdex-test-'));
   const providers = new ProviderRegistry(adapters);
   const settings = new SettingsService(path.join(directory, 'settings.json'), directory);
   const sessions = new SessionService(providers, settings);
-  const app = createApp({ providers, sessions, settings, allowedOrigins: [origin], defaultWorkingDirectory: directory });
+  const app = createApp({ providers, sessions, settings, allowedOrigins: useDefaultOrigins ? undefined : [browserOrigin], defaultWorkingDirectory: directory });
   app.server.listen(0, '127.0.0.1');
   await once(app.server, 'listening');
   const address = app.server.address();
   assert(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}`;
   // Requests model Vite's same-origin proxy, preserving the browser Host.
-  const headers: Record<string, string> = { Host: new URL(origin).host, Origin: origin };
+  const headers: Record<string, string> = { Host: new URL(browserOrigin).host, Origin: browserOrigin };
   const first = await send(`${base}/api/sessions`, 'GET', headers);
   assert.equal(first.status, 200);
   headers.Cookie = first.headers.getSetCookie()[0]!.split(';')[0]!;
@@ -323,9 +323,9 @@ test('rejects invalid provider IDs without launching or falling back', async (t)
   }
 });
 
-test('sessions endpoint includes provider history when no Agentdex terminal exists', async (t) => {
+test('sessions endpoint includes provider history when no AgentDex terminal exists', async (t) => {
   const stored = {
-    activity: 'unknown' as const, id: 'external-history', title: 'Started outside Agentdex', workingDirectory: '/external',
+    activity: 'unknown' as const, id: 'external-history', title: 'Started outside AgentDex', workingDirectory: '/external',
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', archived: false,
   };
   const context = await setup([{ ...fixtureProvider, listSessions: async () => [stored] }]);
@@ -566,4 +566,42 @@ test('terminal cleanup keeps running processes and reconnect snapshots retain sc
   assert.deepEqual(await (await context.request('/sessions/clear-memory', 'POST')).json(), { clearedIds: [session.id], failures: [] });
   assert.deepEqual(await (await context.request('/sessions/clear-memory', 'POST')).json(), { clearedIds: [], failures: [] });
   assert.throws(() => context.sessions.getRuntime(session.id), /not found/);
+});
+
+test('configured HTTPS origin supports API and terminal access while retaining access checks', async (t) => {
+  const httpsOrigin = 'https://agentdex.tailae2d54.ts.net';
+  const previous = process.env.AGENTDEX_ALLOWED_ORIGINS;
+  process.env.AGENTDEX_ALLOWED_ORIGINS = ` ${httpsOrigin}, https://other.example `;
+  t.after(() => {
+    if (previous === undefined) delete process.env.AGENTDEX_ALLOWED_ORIGINS;
+    else process.env.AGENTDEX_ALLOWED_ORIGINS = previous;
+  });
+  // Model Tailscale's HTTP upstream with the browser's HTTPS Origin and Host.
+  const context = await setup(undefined, httpsOrigin, true);
+  t.after(context.cleanup);
+  assert.equal((await context.request('/health', 'GET', undefined, { Host: '127.0.0.1:5173', Origin: origin })).status, 200);
+  assert.equal((await context.request('/health', 'GET', undefined, { Host: 'other.example', Origin: 'https://other.example' })).status, 200);
+  assert.equal((await context.request('/sessions', 'POST', {}, { Host: new URL(httpsOrigin).host, Origin: httpsOrigin })).status, 403);
+  const created = await context.request('/sessions', 'POST', { workingDirectory: context.directory });
+  assert.equal(created.status, 201);
+  const session = await created.json() as Session;
+  const rejectedHeaders: Record<string, string>[] = [
+    { ...context.headers, Origin: 'https://unknown.example' },
+    { ...context.headers, Host: 'unknown.example' },
+    { ...context.headers, Cookie: '' },
+    { ...context.headers, Origin: '' },
+  ];
+  for (const headers of rejectedHeaders) {
+    if (headers.Origin === 'https://unknown.example' || headers.Host === 'unknown.example') {
+      assert.equal((await context.request('/health', 'GET', undefined, headers)).status, 403);
+    }
+    const denied = connect(context.base, session.id, headers);
+    const [error] = await once(denied.socket, 'error');
+    assert.match(String(error), /403/);
+  }
+  const terminal = connect(context.base, session.id, context.headers);
+  t.after(() => terminal.socket.terminate());
+  await waitFor(() => output(terminal.messages).includes(`READY ${context.directory}`));
+  terminal.socket.send(JSON.stringify({ type: 'input', data: 'hello\r' }));
+  await waitFor(() => output(terminal.messages).includes('hello'));
 });

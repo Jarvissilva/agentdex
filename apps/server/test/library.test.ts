@@ -157,7 +157,7 @@ async function storedFiles(folder: string): Promise<string[]> {
   return files;
 }
 
-test('credentials stay out of Agentdex files and sync from provider-owned config after restart', async t => {
+test('credentials stay out of AgentDex files and sync from provider-owned config after restart', async t => {
   const { home, options, service } = await setup(t);
   const id = await service.put('mcps', { name: 'Private HTTP', definition: { transport: 'http', enabled: true, url: 'https://example.com/mcp', headers: { Authorization: 'provider-only-secret' } } });
   assert.ok((await storedFiles(options.root)).every(text => !text.includes('provider-only-secret')));

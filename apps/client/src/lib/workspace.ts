@@ -10,14 +10,6 @@ export function initialPanel(search: string): WorkspacePanel {
   return panels.find(panel => panel === value) ?? 'sessions';
 }
 
-export function legacyWorkspaceLocation(panel: WorkspacePanel, url: string) {
-  const query = new URL(url).searchParams;
-  query.delete('panel');
-  if (panel !== 'sessions') query.set('panel', panel);
-  const search = query.toString();
-  return search ? `/?${search}` : '/';
-}
-
 export function findEditorTab(tabs: EditorTab[], kind: LibraryKind, item: LibraryItem | 'new') {
   return tabs.find(tab => tab.kind === kind && (item === 'new' ? tab.item === 'new' : tab.item !== 'new' && tab.item.id === item.id));
 }

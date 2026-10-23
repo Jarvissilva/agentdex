@@ -29,7 +29,7 @@ function ProviderSettings({ id, name, directory, value, onChange }: { id: string
     <p className="text-xs text-muted-foreground">Custom IDs are validated by the provider when launching.</p>
   </fieldset>;
 }
-export default function Settings({ active = true }: { active?: boolean }) {
+export default function SettingsPanel({ active = true }: { active?: boolean }) {
   const [settings, setSettings] = useState<Preferences>();
   const [savedSettings, setSavedSettings] = useState<Preferences>();
   const [providers, setProviders] = useState<ProvidersResponse['providers']>([]);
@@ -78,7 +78,7 @@ export default function Settings({ active = true }: { active?: boolean }) {
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}{feedback && <p role="status" className="text-sm text-muted-foreground">{feedback}</p>}
     {!settings && !error && <p role="status">Loading settings…</p>}
     {settings && <form id="settings-form" className="min-w-0 space-y-6" onSubmit={e => { e.preventDefault(); void save(); }}>
-      <fieldset disabled={busy} className="min-w-0 space-y-4"><legend className="mb-3 font-medium">Launch preferences</legend><p className="text-sm text-muted-foreground">Defaults apply to new Agentdex sessions. Resumed conversations keep their provider-saved choices.</p>
+      <fieldset disabled={busy} className="min-w-0 space-y-4"><legend className="mb-3 font-medium">Launch preferences</legend><p className="text-sm text-muted-foreground">Defaults apply to new AgentDex sessions. Resumed conversations keep their provider-saved choices.</p>
       <label className="block space-y-1 text-sm"><span>Default provider</span><Select value={settings.defaultProviderId} onValueChange={defaultProviderId => setSettings({ ...settings, defaultProviderId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(providers.length ? providers : [{ id: 'codex', name: 'Codex' }, { id: 'agy', name: 'Antigravity' }, { id: 'opencode', name: 'OpenCode' }]).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></label>
       <label className="block space-y-1 text-sm"><span>Starting directory</span><input required className={inputClass} value={settings.startingDirectory} onChange={e => setSettings({ ...settings, startingDirectory: e.target.value })} /></label>
       {Object.entries(settings.providers).map(([id, value]) => <ProviderSettings key={id} id={id} name={providers.find(p => p.id === id)?.name ?? id} directory={settings.startingDirectory} value={value} onChange={value => setSettings({ ...settings, providers: { ...settings.providers, [id]: value } })} />)}

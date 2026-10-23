@@ -40,7 +40,7 @@ export default async function pickDirectory(value: unknown, signal?: AbortSignal
     } catch (error) {
       if (process.platform === 'linux' && error && typeof error === 'object' && 'code' in error && error.code === 1
         && !('stderr' in error && typeof error.stderr === 'string' && /cannot open display|could not connect|failed to open display/i.test(error.stderr))) return null;
-      throw new HttpError(503, 'Unable to open the system folder picker. Check that Agentdex is running in a desktop session, or enter the directory path.');
+      throw new HttpError(503, 'Unable to open the system folder picker. Check that AgentDex is running in a desktop session, or enter the directory path.');
     }
     const directory = stdout.replace(/[\r\n]+$/, '');
     if (!directory) return null;

@@ -8,19 +8,19 @@ import { initialPanel, findEditorTab, adjacentTab, type WorkspacePanel, type Edi
 import { api, ApiRequestError } from '@/lib/api';
 import SessionExplorer from '@/components/sessions/SessionExplorer';
 import AppLayout, { type WorkspaceContext } from '@/layouts/AppLayout';
-import SessionsPanel from '@/pages/SessionsPanel';
-import { sessionsLoader } from '@/pages/Sessions';
+import SessionsPanel from '@/components/panels/SessionsPanel';
+import { workspaceLoader } from '@/lib/workspaceLoader';
 import NewSessionDialog from '@/components/sessions/NewSessionDialog';
 import { sessionActivity } from '@/lib/sessionActivity';
 import { Tabs } from 'radix-ui';
 
 const libraryPanels = {
-  skills: lazy(() => import('@/pages/Library').then(module => ({ default: module.SkillsPanel }))),
-  agents: lazy(() => import('@/pages/Library').then(module => ({ default: module.AgentsPanel }))),
-  mcps: lazy(() => import('@/pages/Library').then(module => ({ default: module.McpsPanel }))),
+  skills: lazy(() => import('@/components/panels/LibraryPanel').then(module => ({ default: module.SkillsPanel }))),
+  agents: lazy(() => import('@/components/panels/LibraryPanel').then(module => ({ default: module.AgentsPanel }))),
+  mcps: lazy(() => import('@/components/panels/LibraryPanel').then(module => ({ default: module.McpsPanel }))),
 };
-const LibraryEditor = lazy(() => import('@/pages/LibraryEditor'));
-const SettingsPanel = lazy(() => import('@/pages/Settings'));
+const LibraryEditor = lazy(() => import('@/components/editors/LibraryEditor'));
+const SettingsPanel = lazy(() => import('@/components/panels/SettingsPanel'));
 
 const SessionTerminal = lazy(() => import('@/components/sessions/SessionTerminal'));
 
@@ -47,7 +47,7 @@ export default function Workspace() {
   }, []);
   const workspace: WorkspaceContext = { panel, selectPanel, desktop, explorerOpen, mobileExplorerOpen, closeMobileExplorer, toggleExplorer };
 
-  const initialData = useLoaderData<typeof sessionsLoader>();
+  const initialData = useLoaderData<typeof workspaceLoader>();
   const [sessionData, setSessionData] = useState(initialData);
   const { managedSessions: loadedManagedSessions, sessions, discoveryErrors, defaultWorkingDirectory, homeDirectory, providers, defaultProviderId } = sessionData;
   const [refreshState, setRefreshState] = useState<'idle' | 'loading'>('idle');
@@ -196,7 +196,7 @@ export default function Workspace() {
   return (
     <AppLayout workspace={workspace}>
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <title>Agentdex</title>
+      <title>AgentDex</title>
       <SessionExplorer {...workspace}>
         <div hidden={workspace.panel !== 'sessions'} className="h-full">
         <SessionsPanel discoveryErrors={discoveryErrors} refreshError={refreshError} refreshState={refreshState} pending={pending} onCreate={() => setCreating(true)} refresh={revalidate} active={panelActive && workspace.panel === 'sessions'} selectedTerminalId={activeTab} onSelectTerminal={selectTerminal} homeDirectory={homeDirectory} managedSessions={managedSessions} sessions={sessions} providers={providers} selectedSession={selectedSession?.providerSessionId ? { provider: selectedSession.provider, id: selectedSession.providerSessionId } : undefined} openingSession={openingSession} openError={openError} onOpen={(session) => { void openSession(session); }} />

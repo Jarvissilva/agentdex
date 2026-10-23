@@ -19,7 +19,7 @@ export default function localAccess(allowedOrigins: Set<string>) {
   const middleware: RequestHandler = (request, response, next) => {
     response.setHeader('Cache-Control', 'no-store');
     if (!allowed(request) || ((!['GET', 'HEAD'].includes(request.method) || /^\/sessions\/managed\/?$/i.test(request.path)) && !hasCookie(request))) {
-      response.status(403).json({ error: 'Local access denied. Open Agentdex in its local browser tab.' });
+      response.status(403).json({ error: 'Local access denied. Open AgentDex in its local browser tab.' });
       return;
     }
     if (!hasCookie(request)) response.cookie('agentdex', token, { httpOnly: true, sameSite: 'strict', path: '/api' });

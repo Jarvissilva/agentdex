@@ -10,7 +10,7 @@ export default function ErrorBoundary() {
     <section role="alert" className="space-y-4 p-8">
       <h1 className="text-lg font-semibold">{notFound ? 'Page not found' : 'Unable to load this page'}</h1>
       <p className="text-sm text-muted-foreground">{notFound ? 'This page does not exist.' : error instanceof ApiRequestError ? error.message : 'Try reloading the page to continue.'}</p>
-      <Button asChild variant="outline"><Link to="/sessions">Back to sessions</Link></Button>
+      <Button asChild variant="outline"><Link to="/">Back to sessions</Link></Button>
     </section>
   );
 }

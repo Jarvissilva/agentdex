@@ -1,21 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { LibraryItem } from '@agentdex/shared';
-import { adjacentTab, findEditorTab, initialPanel, legacyWorkspaceLocation, panels, type EditorTab, type WorkspaceTab } from '../src/lib/workspace.ts';
+import { adjacentTab, findEditorTab, initialPanel, panels, type EditorTab, type WorkspaceTab } from '../src/lib/workspace.ts';
 
 const item: LibraryItem = { id: 'saved', name: 'Saved skill', nativeName: 'saved', installations: [] };
 const saved: EditorTab = { type: 'editor', key: 'stable-key', kind: 'skills', item, dirty: true };
 const draft: EditorTab = { type: 'editor', key: 'draft-key', kind: 'skills', item: 'new', dirty: true };
 
-test('every legacy URL selects its panel while preserving new-session parameters', () => {
+test('every supported panel can be selected through the workspace query', () => {
   for (const panel of panels) {
-    const target = legacyWorkspaceLocation(panel, `http://localhost/${panel}?new=1&panel=invalid`);
-    const url = new URL(target, 'http://localhost');
-    assert.equal(url.pathname, '/');
-    assert.equal(url.searchParams.get('new'), '1');
-    assert.equal(initialPanel(url.search), panel);
+    assert.equal(initialPanel(`?new=1&panel=${panel}`), panel);
   }
-  assert.equal(legacyWorkspaceLocation('sessions', 'http://localhost/sessions'), '/');
 });
 
 test('reload without panel selection defaults to Sessions and rejects unknown panels', () => {

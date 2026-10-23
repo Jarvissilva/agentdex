@@ -32,9 +32,20 @@ interface AppOptions {
   defaultWorkingDirectory?: string;
 }
 
+function configuredOrigins(): string[] {
+  return (process.env.AGENTDEX_ALLOWED_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean).map((value) => {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== value) {
+      throw new Error('AGENTDEX_ALLOWED_ORIGINS must contain comma-separated HTTP(S) origins without paths or trailing slashes.');
+    }
+    return url.origin;
+  });
+}
+
 export default function createApp(options: AppOptions = {}) {
   const port = process.env.PORT || '3001';
   const origins = new Set(options.allowedOrigins ?? [
+    ...configuredOrigins(),
     ...['127.0.0.1', 'localhost'].flatMap((host) => [5173, 4173, Number(port)].map((value) => `http://${host}:${value}`)),
   ]);
   const providers = options.providers ?? new ProviderRegistry();

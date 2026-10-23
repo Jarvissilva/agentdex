@@ -12,6 +12,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 6001,
+        AGENTDEX_ALLOWED_ORIGINS: 'https://agentdex.tailae2d54.ts.net',
       },
     },
   ],
