@@ -162,6 +162,41 @@ test('answers startup color queries without a browser and preserves input backgr
   }
 });
 
+test('restores SGR mouse encoding in snapshots and forwards binary mouse input', async (t) => {
+  const context = await setup([{
+    ...fixtureProvider,
+    getLaunchConfig: () => ({ executable: process.execPath, args: [fileURLToPath(new URL('./fixtures/terminal-mouse.mjs', import.meta.url))] }),
+  }]);
+  t.after(context.cleanup);
+  const session = await context.sessions.create(context.directory, 'codex');
+  const runtime = context.sessions.getRuntime(session.id);
+  await waitFor(() => runtime.terminal.buffer.active.getLine(0)?.translateToString(true).includes('MOUSE_READY') ?? false);
+  assert.equal(runtime.mouseEncoding(), '\x1b[?1006h');
+  const serialized = runtime.serializer.serialize();
+  // SerializeAddon restores tracking but never the encoding, so the snapshot
+  // must append it or clicks and wheel events arrive in the legacy binary form.
+  assert.ok(serialized.includes('\x1b[?1002h'));
+  assert.ok(!serialized.includes('\x1b[?1006h'));
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const client = connect(context.base, session.id, context.headers);
+    await waitFor(() => client.messages.some((message) => message.type === 'snapshot'));
+    const snapshot = client.messages[0];
+    assert(snapshot?.type === 'snapshot');
+    assert.ok(snapshot.data.includes('\x1b[?1002h'));
+    assert.ok(snapshot.data.includes('\x1b[?1006h'));
+    if (attempt === 0) {
+      // Legacy X10 mouse reports arrive as latin-1 bytes through xterm's
+      // onBinary path and must reach the PTY unchanged.
+      const report = String.fromCharCode(0x1b, 0x5b, 0x4d, 0x20, 0xa0, 0xc8);
+      client.socket.send(JSON.stringify({ type: 'input', data: report, encoding: 'binary' }));
+      await waitFor(() => output(client.messages).includes('BYTES 1b 5b 4d 20 a0 c8'));
+    }
+    client.socket.close();
+    await once(client.socket, 'close');
+  }
+});
+
 test('validates directories, supports concurrent launches, and stops each session', async (t) => {
   const context = await setup();
   t.after(context.cleanup);

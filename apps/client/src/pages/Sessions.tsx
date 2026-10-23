@@ -242,10 +242,11 @@ export default function Sessions() {
           {visibleSessions.map((session) => {
             const providerName = providers.find((provider) => provider.id === session.provider)?.name ?? session.provider;
             return (
-              <Tabs.Content key={session.id} value={session.id} className="min-h-0 flex-1 overflow-auto p-3 data-[state=active]:flex data-[state=active]:flex-col data-[state=active]:gap-3">
+              <Tabs.Content key={session.id} value={session.id} className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                 <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading terminal…</p>}>
                   <SessionTerminal
                     sessionId={session.id}
+                    providerId={session.provider}
                     providerName={providerName}
                     onExit={onExit}
                   />

@@ -8,11 +8,12 @@ import '@xterm/xterm/css/xterm.css';
 
 interface Props {
   sessionId: string;
+  providerId: string;
   providerName: string;
   onExit: () => void;
 }
 
-export default function SessionTerminal({ sessionId, providerName, onExit }: Props) {
+export default function SessionTerminal({ sessionId, providerId, providerName, onExit }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState('Connecting…');
 
@@ -24,6 +25,10 @@ export default function SessionTerminal({ sessionId, providerName, onExit }: Pro
       theme: terminalTheme,
       allowProposedApi: true,
       scrollback: 2000,
+      // The native viewport scrollbar is hidden (see style.css), but FitAddon
+      // still reserves 14px for it. Keep only a sub-pixel ruler so the grid can
+      // use the full width of the tab.
+      overviewRuler: { width: 0.5, showTopBorder: false, showBottomBorder: false },
     });
     // The server owns color query replies, including when no browser is attached.
     // Consume the query here so each connected browser does not reply again.
@@ -145,10 +150,14 @@ export default function SessionTerminal({ sessionId, providerName, onExit }: Pro
     };
   }, [sessionId, onExit]);
 
+  const inset = providerId === 'agy' || providerId === 'codex';
+
   return (
-    <div className="flex min-h-48 flex-1 flex-col overflow-hidden rounded border border-border bg-background">
-      {connection !== 'Connected' && !connection.startsWith('Session ended') && <div role="status" className="shrink-0 border-b border-border px-4 py-2 text-xs text-muted-foreground">{connection}</div>}
-      <div ref={container} aria-label={`${providerName} terminal`} className="min-h-0 flex-1 p-2" />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      {connection !== 'Connected' && !connection.startsWith('Session ended') && <div role="status" className="shrink-0 px-2 py-1 text-xs text-muted-foreground">{connection}</div>}
+      <div className={inset ? 'min-h-0 flex-1 px-4 pb-4' : 'min-h-0 flex-1'}>
+        <div ref={container} aria-label={`${providerName} terminal`} className="h-full w-full" />
+      </div>
     </div>
   );
 }

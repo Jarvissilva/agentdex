@@ -56,3 +56,20 @@
     @apply m-0 min-w-80 bg-background font-sans text-foreground antialiased;
   }
 }
+
+/* Keep the terminal flush with the tab edges. The native xterm viewport
+   scrollbar reserves a column of unused width; hiding it gives those pixels
+   back to the character grid. Wheel scrolling still works. */
+.xterm,
+.xterm .xterm-viewport {
+  background-color: var(--background);
+}
+
+.xterm .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
