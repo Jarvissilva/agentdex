@@ -4,11 +4,15 @@
   "private": true,
   "description": "A local workspace for coding agent sessions.",
   "scripts": {
-    "dev": "pnpm --filter @agentdex/client dev",
+    "dev": "pnpm --parallel --filter @agentdex/client --filter @agentdex/server dev",
+    "dev:client": "pnpm --filter @agentdex/client dev",
+    "dev:server": "pnpm --filter @agentdex/server dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "preview": "pnpm --filter @agentdex/client preview"
+    "preview": "pnpm --filter @agentdex/client preview",
+    "start": "pnpm --filter @agentdex/server start",
+    "test": "pnpm -r --if-present test"
   },
   "license": "ISC",
   "engines": {
