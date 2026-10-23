@@ -6,6 +6,7 @@ export default function sessionRoutes(controller: SessionController) {
   router.get('/', controller.list);
   router.get('/managed', controller.managed);
   router.post('/', controller.create);
+  router.post('/clear-memory', controller.clearMemory);
   router.post('/pick-directory', controller.pickDirectory);
   router.patch('/history/:provider/:id', controller.renameHistory);
   router.delete('/history/:provider/:id', controller.deleteHistory);

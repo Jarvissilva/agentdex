@@ -18,7 +18,13 @@ import LibraryService from './services/LibraryService.js';
 import LibraryController from './controllers/LibraryController.js';
 import libraryRoutes from './routes/library.js';
 
+import SettingsService from './services/SettingsService.js';
+import ModelService from './services/ModelService.js';
+import SettingsController from './controllers/SettingsController.js';
+import settingsRoutes from './routes/settings.js';
+
 interface AppOptions {
+  settings?: SettingsService;
   library?: LibraryService;
   providers?: ProviderRegistry;
   sessions?: SessionService;
@@ -32,7 +38,9 @@ export default function createApp(options: AppOptions = {}) {
     ...['127.0.0.1', 'localhost'].flatMap((host) => [5173, 4173, Number(port)].map((value) => `http://${host}:${value}`)),
   ]);
   const providers = options.providers ?? new ProviderRegistry();
-  const sessions = options.sessions ?? new SessionService(providers);
+  const settings = options.settings ?? new SettingsService(undefined, options.defaultWorkingDirectory);
+  const models = new ModelService(providers);
+  const sessions = options.sessions ?? new SessionService(providers, settings, models);
   const access = localAccess(origins);
   const app = express();
   app.disable('x-powered-by');
@@ -40,9 +48,11 @@ export default function createApp(options: AppOptions = {}) {
   app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
   const library = options.library ?? new LibraryService();
   app.use('/api/skills', libraryRoutes(new LibraryController(library, 'skills'), true));
+  app.use('/api/agents', libraryRoutes(new LibraryController(library, 'agents')));
   app.use('/api/mcps', libraryRoutes(new LibraryController(library, 'mcps')));
-  app.use('/api/providers', providerRoutes(new ProviderController(providers)));
-  app.use('/api/sessions', sessionRoutes(new SessionController(sessions, options.defaultWorkingDirectory ?? process.env.INIT_CWD ?? homedir(), new SessionHistoryService(providers))));
+  app.use('/api/settings', settingsRoutes(new SettingsController(settings, models)));
+  app.use('/api/providers', providerRoutes(new ProviderController(providers, settings, models)));
+  app.use('/api/sessions', sessionRoutes(new SessionController(sessions, options.defaultWorkingDirectory ?? process.env.INIT_CWD ?? homedir(), new SessionHistoryService(providers), settings)));
   app.use('/api', (_request, response) => response.status(404).json({ error: 'API endpoint not found.' }));
 
   const clientDist = fileURLToPath(new URL('../../client/dist/', import.meta.url));

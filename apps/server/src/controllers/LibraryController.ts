@@ -14,7 +14,7 @@ export default class LibraryController {
     const id = await this.service.put('skills', { name: body.name }, undefined, body.path);
     response.status(201).json({ item: (await this.service.list('skills')).find(item => item.id === id) });
   };
-  sync = async (request: Request, response: Response) => { response.json({ results: await this.service.sync(this.kind, request.params.id as string, (request.body as SyncRequest).destinations) }); };
+  sync = async (request: Request, response: Response) => { response.json({ results: await this.service.sync(this.kind, request.params.id as string, (request.body as SyncRequest).destinations, false, request.body as SyncRequest) }); };
   uninstall = async (request: Request, response: Response) => { response.json({ results: await this.service.sync(this.kind, request.params.id as string, (request.body as SyncRequest).destinations, true) }); };
   remove = async (request: Request, response: Response) => { await this.service.remove(this.kind, request.params.id as string); response.json({ deleted: true }); };
 }

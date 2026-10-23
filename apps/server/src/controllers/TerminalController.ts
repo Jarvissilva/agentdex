@@ -29,6 +29,8 @@ export default function attachTerminals(server: Server, sessions: SessionService
         if (client.bufferedAmount > 1024 * 1024) { client.close(1013, 'Terminal client is too slow.'); return; }
         client.send(JSON.stringify(message));
       };
+      const removed = () => client.close(1008, 'Terminal memory cleared.');
+      runtime.events.on('removed', removed);
       const output = (value: string) => send({ type: 'output', data: value });
       const exit = (session: Session) => {
         send({ type: 'exit', session });
@@ -36,12 +38,13 @@ export default function attachTerminals(server: Server, sessions: SessionService
       };
       client.on('error', () => client.close());
       client.on('close', () => {
+        runtime.events.off('removed', removed);
         runtime.events.off('output', output);
         runtime.events.off('exit', exit);
       });
       runtime.terminal.write('', () => {
         if (client.readyState !== WebSocket.OPEN) return;
-        send({ type: 'snapshot', data: runtime.serializer.serialize() + runtime.mouseEncoding(), cols: runtime.terminal.cols, rows: runtime.terminal.rows, session: { ...runtime.info } });
+        send({ type: 'snapshot', data: runtime.serializer.serialize() + runtime.mouseEncoding(), cols: runtime.terminal.cols, rows: runtime.terminal.rows, scrollback: runtime.terminal.options.scrollback, session: { ...runtime.info } });
         if (runtime.info.status === 'exited') { client.close(1000, 'Session exited.'); return; }
         runtime.events.on('output', output);
         runtime.events.on('exit', exit);

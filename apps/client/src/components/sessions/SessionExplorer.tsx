@@ -9,7 +9,7 @@ interface Props extends WorkspaceContext {
 
 export default function SessionExplorer({ children, explorerOpen, mobileExplorerOpen, closeMobileExplorer }: Props) {
   const [desktop, setDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
-  const [width, setWidth] = useState(300);
+  const [width, setWidth] = useState(360);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const closeMobile = useRef(closeMobileExplorer);
   useEffect(() => { closeMobile.current = closeMobileExplorer; }, [closeMobileExplorer]);

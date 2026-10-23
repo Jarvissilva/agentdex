@@ -51,9 +51,23 @@ Antigravity CLI discovery reads `~/.gemini/antigravity-cli/conversation_summarie
 
 Multiple managed terminals can run concurrently, including several from the same provider. Each new session opens its own tab; **All sessions** shows native saved history. Switching tabs or refreshing the browser preserves the running processes and restores terminal screen state and bounded scrollback when reconnecting. Closing the browser leaves the CLIs running. **Stop session** terminates only the process in that session tab; other sessions continue running. Exited tabs remain available for reviewing output until the backend restarts.
 
-Managed terminals live in backend memory. Stopping or restarting the backend ends the running process and clears its terminal state; provider history remains available. Sessions launched outside Agentdex are listed but their terminals cannot be attached. Agentdex has no separate database, detached runner, or provider configuration management yet.
+Managed terminals live in backend memory. Stopping or restarting the backend ends the running process and clears its terminal state; provider history remains available. Sessions launched outside Agentdex are listed but their terminals cannot be attached. Agentdex has no separate session database or detached runner.
 
 Both servers bind to loopback. API mutations and terminal connections require a local HttpOnly session cookie; requests with unknown hosts or origins are rejected. No provider credentials are sent to the browser.
+
+## Library names and storage
+
+The library lives under `~/.local/share/agentdex/`. Skills use the frontmatter name from `SKILL.md` under `skills/<skill-name>/`. MCP definitions live at `mcps/<original-name>/definition.json`, with secret-free launcher snapshots in the same folder. MCP provider keys use the original name; JSON imports preserve the `mcpServers` key. Changing a display label does not rename storage or provider entries. Unsafe and duplicate names are rejected without automatic prefixes or suffixes.
+
+Saving or syncing migrates legacy MCP definition files. The next explicit Sync of each destination renames an owned generated provider key to its original name, preserving credentials and provider metadata. Unmanaged entries, external edits, and naming conflicts are preserved and reported.
+
+## MCP credentials
+
+Create or edit MCPs on `/mcps` using the form or JSON, select providers, then click **Sync**. Agentdex saves credential names and masked placeholders in its library; actual environment/header values entered in the form are held in server memory until a successful Sync. Sync writes those values directly into the selected providers' native configuration files with owner-only permissions. Unsynced values are lost if the server restarts; enter them again if needed. Saving a definition does not update providers.
+
+Later Sync operations recover static credentials from Agentdex-owned provider entries, including after a restart. If providers contain different values, choose a **Credential source** or enter replacement values. Unmanaged or structurally modified entries cannot supply credentials. Environment/file references are not resolved or copied as tokens. OAuth login, credential stores, and refresh remain provider-managed.
+
+Provider files can contain plaintext API tokens; Agentdex does not encrypt them. Its catalog, definition files, and new launcher snapshots contain no environment/header credential values. A secret-free launcher is used only when OpenCode needs a working directory; credentials are supplied by OpenCode's native environment configuration. Existing installations from older Agentdex versions are marked for migration: explicitly Sync each installed destination to move its credentials into native configuration and remove its old secret-bearing snapshot. Conflicts preserve the existing installation and require resolution before cleanup.
 
 ## Local API
 
@@ -69,3 +83,17 @@ Integration tests launch a real PTY with deterministic provider fixtures to cove
 Saved sessions can be permanently deleted from each history row after confirmation, including child sessions. Codex uses native app-server `thread/delete`; OpenCode uses `session delete <id>` with `OPENCODE_BIN` when configured. Stop all of the provider's running Agentdex terminals before deleting.
 
 Antigravity deletion is **local-only** and requires confirmation that external Antigravity sessions are stopped. Presence-file existence and persisted status alone do not establish activity; held locks do. Cleanup uses the directory containing `AGY_HISTORY_DB`, or `~/.gemini/antigravity-cli` by default. It removes the conversation and descendants' databases and sidecars, brain folders, annotations, presence locks, implicit files, and matching entries in `cache/last_conversations.json` and `cache/conversation_metadata.json`, then summary records. Workspace files, cloud copies, shared logs, and knowledge are outside scope. Symlinked targets and unsupported cache/database formats are rejected. If cleanup partially fails, summary records remain available so deletion can be retried after resolving the reported problem.
+
+## Custom Agents
+
+Open `/agents` to create a specialist using the form or paste Markdown with `name` and `description` frontmatter and instructions in the body. Only these frontmatter fields are supported; other settings are rejected. Original names must be lowercase and hyphenated, are immutable, and are never automatically renamed. Display labels can change independently.
+
+Canonical Markdown lives at `~/.local/share/agentdex/agents/<original-name>/agent.md`. Saving changes only the library. Select destinations and click **Sync** to publish regular global agent files:
+
+- [Codex](https://learn.chatgpt.com/docs/agent-configuration/subagents): `$CODEX_HOME/agents/<name>.toml` (defaults to `~/.codex`). Ask Codex to delegate to the named specialist.
+- [Antigravity](https://www.agy.dev/docs/subagents?tab=cli): `~/.gemini/config/agents/<name>.md`, with `subagent: true` and `mainAgent: false`. Ask the parent agent to invoke the named subagent.
+- [OpenCode v2](https://dev.opencode.ai/v2/docs/agents/): `$XDG_CONFIG_HOME/opencode/agents/<name>.md` (defaults to `~/.config`), with `mode: subagent`. Ask the primary agent to use the named subagent.
+
+Provider reload or restart may be needed after Sync or Uninstall. Model, tools, permissions, MCP settings, and execution policy remain controlled by provider defaults. Session launching is unchanged. Agentdex reports outdated publications after instruction edits and conflicts for built-in names, competing global definitions, unmanaged files, symlinks, or external edits. Uninstall and Delete remove only publications whose stored ownership fingerprints still match; resolve conflicts before retrying. Project installations, native-format imports, advanced settings, and a launch selector are deferred.
+
+Agents use the library API conventions: `GET/POST /api/agents`, `PUT/DELETE /api/agents/:id`, and `POST /api/agents/:id/sync` or `/uninstall` with a `destinations` array. Creation and updates accept a display `name` plus either `agent: { name, description, instructions }` or canonical Markdown `content`.

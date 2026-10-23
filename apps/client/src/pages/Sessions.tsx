@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ListFilter, Search, Plus, RefreshCw, Square, X, Command } from 'lucide-react';
-import { data, Form, Link, useActionData, useLoaderData, useNavigation, useOutletContext, useRevalidator, useSearchParams, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
+import { ListFilter, Search, Plus, RefreshCw, Square, X } from 'lucide-react';
+import { data, Form, useActionData, useLoaderData, useNavigation, useOutletContext, useRevalidator, useSearchParams, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import type { CreateSessionRequest, ManagedSessionsResponse, ProvidersResponse, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { Button } from '@/components/ui/shadcn/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/shadcn/select';
@@ -61,12 +61,14 @@ export default function Sessions() {
   const [dateRange, setDateRange] = useState('today');
   const dateOptions = [{ value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: '7days', label: 'Last 7 days' }, { value: '30days', label: 'Last 30 days' }, { value: 'all', label: 'All time' }];
   const [activity, setActivity] = useState<SessionStatusFilter>('active');
-  const statusOptions = [{ value: 'active', label: 'Running' }, { value: 'needs-input', label: 'Needs input' }, { value: 'inactive', label: 'Ready' }, { value: 'all', label: 'All' }] as const;
+  const statusOptions = [{ value: 'all', label: 'All' }, { value: 'active', label: 'Running' }, { value: 'needs-input', label: 'Needs input' }, { value: 'inactive', label: 'Ready' }] as const;
   const [provider, setProvider] = useState('all');
+  const [groupByDirectory, setGroupByDirectory] = useState(false);
   const [search, setSearch] = useState('');
   const [closedTabs, setClosedTabs] = useState<string[]>([]);
   const visibleSessions = managedSessions.filter((session) => !closedTabs.includes(session.id));
-  const [activeTab, setActiveTab] = useState(managedSessions.at(-1)?.id ?? '');
+  const [requestedTab, setActiveTab] = useState(managedSessions.at(-1)?.id ?? '');
+  const activeTab = managedSessions.some(session => session.id === requestedTab) ? requestedTab : visibleSessions.at(-1)?.id ?? '';
   const workspace = useOutletContext<WorkspaceContext>();
   const { closeMobileExplorer } = workspace;
   const [openingSession, setOpeningSession] = useState<ProviderSession | null>(null);
@@ -171,7 +173,7 @@ export default function Sessions() {
             </Popover.Root>
             <Popover.Root>
               <Popover.Trigger asChild>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="Filter sessions" title="Filter sessions" className={provider !== 'all' || dateRange !== 'today' || activity !== 'active' ? 'text-blue-400' : ''}><ListFilter aria-hidden="true" /></Button>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Filter sessions" title="Filter sessions" className={provider !== 'all' || dateRange !== 'today' || activity !== 'active' || groupByDirectory ? 'text-blue-400' : ''}><ListFilter aria-hidden="true" /></Button>
               </Popover.Trigger>
               <Popover.Portal>
                 <Popover.Content align="end" sideOffset={4} className="z-50 w-56 space-y-3 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-md">
@@ -202,6 +204,10 @@ export default function Sessions() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <label className="flex items-center gap-2 text-xs font-medium">
+                    <input type="checkbox" checked={groupByDirectory} onChange={(event) => setGroupByDirectory(event.target.checked)} />
+                    Group by working directory
+                  </label>
                 </Popover.Content>
               </Popover.Portal>
             </Popover.Root>
@@ -210,15 +216,12 @@ export default function Sessions() {
           </div>
         </div>
         {discoveryErrors.map((issue) => <p key={issue.provider} role="alert" className="px-3 pb-3 text-xs text-destructive">{providers.find((provider) => provider.id === issue.provider)?.name ?? issue.provider}: {issue.error}</p>)}
-        <SessionList selectedTerminalId={activeTab} onSelectTerminal={selectTerminal} homeDirectory={homeDirectory} activity={activity} onActivityChange={setActivity} search={search} provider={provider} dateRange={dateRange} managedSessions={managedSessions} sessions={sessions} providers={providers} selectedSession={selectedSession?.providerSessionId ? { provider: selectedSession.provider, id: selectedSession.providerSessionId } : undefined} openingSession={openingSession} openError={openError} onOpen={(session) => { void openSession(session); }} />
+        <SessionList selectedTerminalId={activeTab} onSelectTerminal={selectTerminal} homeDirectory={homeDirectory} groupByDirectory={groupByDirectory} activity={activity} onActivityChange={setActivity} search={search} provider={provider} dateRange={dateRange} managedSessions={managedSessions} sessions={sessions} providers={providers} selectedSession={selectedSession?.providerSessionId ? { provider: selectedSession.provider, id: selectedSession.providerSessionId } : undefined} openingSession={openingSession} openError={openError} onOpen={(session) => { void openSession(session); }} />
       </SessionExplorer>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {actionData?.error && <p role="alert" className="p-3 text-sm text-destructive">{actionData.error}</p>}
         <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-w-0 shrink-0 items-center border-b border-border bg-sidebar">
-            <Link to="/" aria-label="Home" title="Home" className="flex shrink-0 items-center justify-center self-stretch border-r border-border px-3 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-              <Command className="size-4" aria-hidden="true" />
-            </Link>
             <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
             <Tabs.List aria-label="Session tabs" className="flex shrink-0 items-center">
               {visibleSessions.map((session) => {
@@ -266,7 +269,7 @@ export default function Sessions() {
           })}
         </Tabs.Root>
       </div>
-      {creating && <NewSessionDialog providers={providers} defaultProviderId={selectedSession?.provider ?? defaultProviderId} defaultWorkingDirectory={selectedSession?.workingDirectory ?? defaultWorkingDirectory} directories={directories} onClose={() => setCreating(false)} onCreated={onCreated} />}
+      {creating && <NewSessionDialog providers={providers} defaultProviderId={defaultProviderId} defaultWorkingDirectory={defaultWorkingDirectory} directories={directories} onClose={() => setCreating(false)} onCreated={onCreated} />}
     </div>
   );
 }

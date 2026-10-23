@@ -1,3 +1,4 @@
+import type SettingsService from '../services/SettingsService.js';
 import HttpError from '../lib/HttpError.js';
 import pickDirectory from '../lib/pickDirectory.js';
 import { homedir } from 'node:os';
@@ -6,12 +7,14 @@ import type SessionService from '../services/SessionService.js';
 import type SessionHistoryService from '../services/SessionHistoryService.js';
 
 export default class SessionController {
-  constructor(private readonly sessions: SessionService, private readonly defaultWorkingDirectory: string, private readonly history: SessionHistoryService) {}
+  constructor(private readonly sessions: SessionService, private readonly defaultWorkingDirectory: string, private readonly history: SessionHistoryService, private readonly settings?: SettingsService) {}
 
   list = async (_request: Request, response: Response) => {
     const history = await this.history.list();
-    response.json({ ...history, session: this.sessions.session, managedSessions: this.sessions.sessions, defaultWorkingDirectory: this.defaultWorkingDirectory, homeDirectory: homedir() });
+    response.json({ ...history, session: this.sessions.session, managedSessions: this.sessions.sessions, defaultWorkingDirectory: (await this.settings?.get())?.startingDirectory ?? this.defaultWorkingDirectory, homeDirectory: homedir() });
   };
+
+  clearMemory = (_request: Request, response: Response) => { response.json(this.sessions.clearMemory()); };
 
   managed = (_request: Request, response: Response) => {
     response.json({ managedSessions: this.sessions.sessions });

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
-import type { TerminalClientMessage, TerminalServerMessage } from '@agentdex/shared';
+import type { Settings, TerminalClientMessage, TerminalServerMessage } from '@agentdex/shared';
 import { terminalColors, terminalTheme } from '@agentdex/shared/terminal-theme.js';
+import { api } from '@/lib/api';
 import '@xterm/xterm/css/xterm.css';
 
 interface Props {
@@ -88,6 +89,7 @@ export default function SessionTerminal({ sessionId, providerId, providerName, o
           if (message.type === 'snapshot') {
             replaying = true;
             ready = false;
+            terminal.options.scrollback = message.scrollback ?? 2000;
             terminal.reset();
             terminal.resize(message.cols, message.rows);
             await new Promise<void>((resolve) => terminal.write(message.data, resolve));
@@ -136,10 +138,17 @@ export default function SessionTerminal({ sessionId, providerId, providerName, o
       resize();
     });
     document.fonts.addEventListener('loadingdone', resize);
+    const preferencesController = new AbortController();
+    const updateFont = (settings: Settings) => { if (!disposed) { terminal.options.fontSize = settings.terminal.fontSize; resize(); } };
+    const settingsChanged = (event: Event) => updateFont((event as CustomEvent<Settings>).detail);
+    window.addEventListener('agentdex-settings', settingsChanged);
+    void api<Settings>('/settings', { signal: preferencesController.signal }).then(updateFont).catch(() => {});
     connect();
 
     return () => {
       disposed = true;
+      preferencesController.abort();
+      window.removeEventListener('agentdex-settings', settingsChanged);
       clearTimeout(retry);
       observer.disconnect();
       document.fonts.removeEventListener('loadingdone', resize);

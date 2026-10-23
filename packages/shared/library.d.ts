@@ -1,4 +1,4 @@
-export type LibraryKind = 'skills' | 'mcps';
+export type LibraryKind = 'skills' | 'mcps' | 'agents';
 export type Destination = 'agents' | 'antigravity' | 'codex' | 'opencode';
 export interface McpDefinition {
   transport: 'stdio' | 'http';
@@ -10,7 +10,14 @@ export interface McpDefinition {
   url?: string;
   headers?: Record<string, string>;
 }
+export interface AgentDefinition {
+  name: string;
+  description: string;
+  instructions: string;
+}
 export interface LibraryInput {
+  agent?: AgentDefinition;
+  nativeName?: string;
   name: string;
   content?: string;
   definition?: McpDefinition;
@@ -24,7 +31,13 @@ export interface LibraryItem extends LibraryInput {
   id: string;
   nativeName: string;
   installations: PublicationStatus[];
+  credentialMigrationRequired?: boolean;
 }
 export interface LibraryResponse { items: LibraryItem[] }
-export interface SyncRequest { destinations: Destination[] }
+export interface McpCredentials { env?: Record<string, string>; headers?: Record<string, string> }
+export interface SyncRequest {
+  destinations: Destination[];
+  credentialSource?: Destination;
+  credentials?: McpCredentials;
+}
 export interface SyncResponse { results: PublicationStatus[] }

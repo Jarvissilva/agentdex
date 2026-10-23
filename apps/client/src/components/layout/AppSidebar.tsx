@@ -1,4 +1,4 @@
-import { BookOpen, Command, Plug, TerminalSquare } from 'lucide-react';
+import { Bot, BookOpen, Command, Plug, Settings, TerminalSquare } from 'lucide-react';
 import { Link, useLocation } from 'react-router';
 
 interface Props {
@@ -20,8 +20,10 @@ export default function AppSidebar({ explorerOpen, mobileExplorerOpen, onToggleE
           <button type="button" aria-label="Toggle sessions explorer" title="Sessions" aria-controls="mobile-sessions-explorer" aria-expanded={mobileExplorerOpen} onClick={onToggleExplorer} className={`${iconClass} border-t-2 border-blue-400 text-foreground md:hidden`}><TerminalSquare className="size-5" aria-hidden="true" /></button>
         </> : <Link to="/sessions" aria-label="Sessions" title="Sessions" className={iconClass}><TerminalSquare className="size-5" aria-hidden="true" /></Link>}
         <Link to="/skills" aria-label="Skills" title="Skills" className={`${iconClass} ${pathname === '/skills' ? 'text-blue-400' : ''}`}><BookOpen className="size-5" aria-hidden="true" /></Link>
+        <Link to="/agents" aria-label="Agents" title="Agents" className={`${iconClass} ${pathname === '/agents' ? 'text-blue-400' : ''}`}><Bot className="size-5" aria-hidden="true" /></Link>
         <Link to="/mcps" aria-label="MCP servers" title="MCP servers" className={`${iconClass} ${pathname === '/mcps' ? 'text-blue-400' : ''}`}><Plug className="size-5" aria-hidden="true" /></Link>
       </nav>
+      <Link to="/settings" aria-label="Settings" title="Settings" className={`${iconClass} ml-auto md:mt-auto md:ml-0 ${pathname === '/settings' ? 'text-blue-400' : ''}`}><Settings className="size-5" aria-hidden="true" /></Link>
     </aside>
   );
 }

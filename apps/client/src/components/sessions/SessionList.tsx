@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Folder, FolderOpen, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, Folder, FolderOpen, LoaderCircle, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import { useRevalidator } from 'react-router';
 import { api, ApiRequestError } from '@/lib/api';
 import type { Provider, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { buildSessionRows, sessionRowActivity, sessionRowKey, type SessionListRow, type SessionStatusFilter } from '@/lib/sessionActivity';
+import { compareSessionRows, parseSessionPins, reconcileSessionPins, sessionPinsStorageKey } from '@/lib/sessionPins';
 import RenameSessionDialog from './RenameSessionDialog';
 import { Button } from '@/components/ui/shadcn/button';
 
@@ -15,6 +16,7 @@ interface Props {
   search: string;
   provider: string;
   homeDirectory: string;
+  groupByDirectory: boolean;
   activity: SessionStatusFilter;
   onActivityChange: (activity: SessionStatusFilter) => void;
   selectedSession?: { provider: string; id: string };
@@ -39,7 +41,7 @@ function relativeTime(value: string, now: number) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-export default function SessionList({ sessions, managedSessions, providers, dateRange, search, provider, homeDirectory, activity, onActivityChange, selectedSession, openingSession, openError, onOpen, selectedTerminalId, onSelectTerminal }: Props) {
+export default function SessionList({ sessions, managedSessions, providers, dateRange, search, provider, homeDirectory, groupByDirectory, activity, onActivityChange, selectedSession, openingSession, openError, onOpen, selectedTerminalId, onSelectTerminal }: Props) {
   const { revalidate } = useRevalidator();
   const [selected, setSelected] = useState<ProviderSession | null>(null);
   const [directoryToDelete, setDirectoryToDelete] = useState<string | null>(null);
@@ -48,6 +50,14 @@ export default function SessionList({ sessions, managedSessions, providers, date
   const [stopped, setStopped] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
+  const [pinned, setPinned] = useState<Set<string>>(() => {
+    try { return parseSessionPins(localStorage.getItem(sessionPinsStorageKey)); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(sessionPinsStorageKey, JSON.stringify([...pinned])); }
+    catch { /* Pinning remains available when browser storage is disabled. */ }
+  }, [pinned]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const [now, setNow] = useState(() => Date.now());
@@ -56,7 +66,7 @@ export default function SessionList({ sessions, managedSessions, providers, date
     return () => clearInterval(timer);
   }, []);
   const [visibleCounts, setVisibleCounts] = useState<Map<string, number>>(() => new Map());
-  const filterKey = JSON.stringify([dateRange, search, provider, activity]);
+  const filterKey = JSON.stringify([dateRange, search, provider, activity, groupByDirectory]);
   const [previousFilters, setPreviousFilters] = useState(filterKey);
   if (previousFilters !== filterKey) {
     setPreviousFilters(filterKey);
@@ -76,6 +86,8 @@ export default function SessionList({ sessions, managedSessions, providers, date
   dateEnd.setHours(0, 0, 0, 0);
   if (dateRange !== 'yesterday') dateEnd.setDate(dateEnd.getDate() + 1);
   const rows = buildSessionRows(sessions, managedSessions, providers);
+  const reconciledPins = reconcileSessionPins(rows, pinned);
+  if (reconciledPins !== pinned) setPinned(reconciledPins);
   const matching = rows.filter((session) => (provider === 'all' || session.provider === provider)
     && (dateRange === 'all' || (Date.parse(session.updatedAt) >= dateStart.getTime() && Date.parse(session.updatedAt) < dateEnd.getTime()))
     && `${session.title} ${session.workingDirectory} ${session.id}`.toLowerCase().includes(query));
@@ -83,16 +95,17 @@ export default function SessionList({ sessions, managedSessions, providers, date
   const visible = matching.filter((session) => activity === 'all' || effectiveActivity(session) === activity);
   const grouped = new Map<string, [SessionListRow, ...SessionListRow[]]>();
   for (const session of visible) {
-    const directory = activity === 'all' ? session.workingDirectory || '' : '';
+    const directory = groupByDirectory ? session.workingDirectory || '' : '';
     const group = grouped.get(directory);
     if (group) group.push(session);
     else grouped.set(directory, [session]);
   }
+  const activePins: ReadonlySet<string> = activity === 'all' ? pinned : new Set();
   for (const group of grouped.values()) {
-    group.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    group.sort((a, b) => compareSessionRows(a, b, activePins));
   }
-  const groups = [...grouped].sort((a, b) => Date.parse(b[1][0].updatedAt) - Date.parse(a[1][0].updatedAt));
-  const displayed = groups.flatMap(([directory, group]) => activity === 'all' && collapsed.has(directory) ? [] : group.slice(0, visibleCounts.get(directory) ?? 5));
+  const groups = [...grouped].sort((a, b) => compareSessionRows(a[1][0], b[1][0], activePins));
+  const displayed = groups.flatMap(([directory, group]) => groupByDirectory && collapsed.has(directory) ? [] : group.slice(0, visibleCounts.get(directory) ?? 5));
   const selectedKey = selectedSession ? sessionKey(selectedSession) : null;
   const names = new Map(providers.map((entry) => [entry.id, entry.name]));
 
@@ -190,10 +203,10 @@ export default function SessionList({ sessions, managedSessions, providers, date
         </dialog>
       )}
       <div role="group" aria-label="Filter sessions by activity" className="flex flex-wrap gap-1 border-b border-border px-2 pb-2 font-mono text-[10px]">
-        {(['active', 'needs-input', 'inactive'] as const).map((value) => (
+        {(['all', 'active', 'needs-input', 'inactive'] as const).map((value) => (
           <button key={value} type="button" aria-pressed={activity === value} onClick={() => { onActivityChange(value); }} className={`inline-flex items-center gap-1 rounded px-1.5 py-1 capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring ${activity === value ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'}`}>
             <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${value === 'active' ? 'bg-emerald-400' : value === 'needs-input' ? 'bg-amber-400' : value === 'inactive' ? 'bg-blue-400' : 'bg-muted-foreground'}`} />
-            {value === 'active' ? 'Running' : value === 'inactive' ? 'Ready' : value === 'needs-input' ? 'Needs input' : value} <span className="tabular-nums text-muted-foreground">{matching.filter((session) => effectiveActivity(session) === value).length}</span>
+            {value === 'active' ? 'Running' : value === 'inactive' ? 'Ready' : value === 'needs-input' ? 'Needs input' : value} <span className="tabular-nums text-muted-foreground">{value === 'all' ? matching.length : matching.filter((session) => effectiveActivity(session) === value).length}</span>
           </button>
         ))}
       </div>
@@ -202,11 +215,11 @@ export default function SessionList({ sessions, managedSessions, providers, date
         <div className="min-w-0 px-2 font-mono text-xs">
           {groups.map(([directory, group]) => {
             const count = visibleCounts.get(directory) ?? 5;
-            const isCollapsed = activity === 'all' && collapsed.has(directory);
+            const isCollapsed = groupByDirectory && collapsed.has(directory);
             const displayDirectory = directory.split('/').filter(Boolean).slice(-2).join('/') || directory;
             return (
-              <section key={directory} aria-label={activity === 'all' ? directory || 'Unknown working directory' : 'Sessions'} className="min-w-0 pb-2">
-                {activity === 'all' && <div className="flex min-w-0 items-center">
+              <section key={directory} aria-label={groupByDirectory ? directory || 'Unknown working directory' : 'Sessions'} className="min-w-0 pb-2">
+                {groupByDirectory && <div className="flex min-w-0 items-center">
                 <h3 className="min-w-0 flex-1">
                   <button type="button" aria-expanded={!isCollapsed} title={directory || 'Unknown working directory'} onClick={() => setCollapsed((previous) => {
                     const next = new Set(previous);
@@ -227,6 +240,7 @@ export default function SessionList({ sessions, managedSessions, providers, date
                       const status = effectiveActivity(session);
                       const statusLabel = status === 'active' ? 'Running' : status === 'needs-input' ? 'Needs input' : status === 'inactive' ? 'Ready' : 'Unknown';
                       const key = sessionRowKey(session);
+                      const isPinned = pinned.has(key);
                       const isSelected = session.kind === 'managed' ? selectedTerminalId === session.terminal.id : selectedKey === sessionKey(session);
                       const isOpening = session.kind === 'saved' && !!openingSession && sessionKey(openingSession) === sessionKey(session);
                       const issue = session.kind === 'saved' && openError && sessionKey(openError) === sessionKey(session) ? openError.message : null;
@@ -262,6 +276,13 @@ export default function SessionList({ sessions, managedSessions, providers, date
                               </span>
                               {isOpening && <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin" />}
                             </button>
+                            {activity === 'all' && <button type="button" aria-pressed={isPinned} aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${names.get(session.provider) ?? session.provider} session ${session.title}`} title={isPinned ? 'Unpin session' : 'Pin session'} className={`flex size-7 shrink-0 items-center justify-center rounded outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring ${isPinned ? 'text-blue-400' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setPinned((previous) => {
+                              const next = new Set(previous);
+                              if (next.has(key)) next.delete(key); else next.add(key);
+                              return next;
+                            })}>
+                              {isPinned ? <PinOff aria-hidden="true" className="size-3" /> : <Pin aria-hidden="true" className="size-3" />}
+                            </button>}
                             <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30" onClick={() => { if (session.kind === 'saved') setRenaming(session); }} disabled={session.kind === 'managed' || deleting || !!openingSession} title="Rename session" aria-label={`Rename ${names.get(session.provider) ?? session.provider} session ${session.title}`}>
                               <Pencil aria-hidden="true" className="size-3" />
                             </button>
@@ -274,7 +295,7 @@ export default function SessionList({ sessions, managedSessions, providers, date
                       );
                     })}
                   </ul>
-                  {count < group.length && <button type="button" className="mt-1 rounded px-1 py-1.5 text-[10px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={activity === 'all' ? `Show more sessions in ${directory || 'Unknown working directory'}` : 'Show more sessions'} onClick={() => setVisibleCounts((counts) => {
+                  {count < group.length && <button type="button" className="mt-1 rounded px-1 py-1.5 text-[10px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={groupByDirectory ? `Show more sessions in ${directory || 'Unknown working directory'}` : 'Show more sessions'} onClick={() => setVisibleCounts((counts) => {
                     const next = new Map(counts);
                     next.set(directory, (counts.get(directory) ?? 5) + 5);
                     return next;

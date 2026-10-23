@@ -5,6 +5,7 @@ import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { EventEmitter } from 'node:events';
 
 export interface SessionRuntime {
+  dispose: () => void;
   info: Session;
   process: IPty;
   terminal: Terminal;

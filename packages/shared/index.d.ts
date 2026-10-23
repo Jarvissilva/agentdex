@@ -60,7 +60,7 @@ export type TerminalClientMessage =
   | { type: 'resize'; cols: number; rows: number };
 
 export type TerminalServerMessage =
-  | { type: 'snapshot'; data: string; cols: number; rows: number; session: Session }
+  | { type: 'snapshot'; data: string; cols: number; rows: number; scrollback?: number; session: Session }
   | { type: 'output'; data: string }
   | { type: 'exit'; session: Session };
 
@@ -69,3 +69,4 @@ export interface ManagedSessionsResponse {
 }
 
 export * from './library.js';
+export * from './settings.js';

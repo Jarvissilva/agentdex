@@ -1,3 +1,5 @@
+import SettingsService from './SettingsService.js';
+import ModelService, { launchArguments } from './ModelService.js';
 import trackMouseEncoding from '../lib/terminalMouse.js';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -25,7 +27,7 @@ export default class SessionService {
   private readonly resuming = new Map<string, { provider: string; operation: Promise<Session> }>();
   private readonly deleting = new Set<string>();
 
-  constructor(private readonly providers = new ProviderRegistry()) {}
+  constructor(private readonly providers = new ProviderRegistry(), private readonly settings = new SettingsService(), private readonly models = new ModelService(providers)) {}
 
   get session(): Session | null {
     const latest = [...this.runtimes.values()].at(-1);
@@ -43,7 +45,9 @@ export default class SessionService {
   }
 
   async create(workingDirectory: unknown, providerId?: unknown, resumeSessionId?: unknown): Promise<Session> {
-    const provider = this.providers.get(providerId);
+    const preferences = await this.settings.get();
+    const provider = this.providers.get(providerId ?? preferences.defaultProviderId);
+    workingDirectory ??= preferences.startingDirectory;
     if (resumeSessionId === undefined) return this.launch(workingDirectory, provider.id);
     if (typeof resumeSessionId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(resumeSessionId)) {
       throw new HttpError(400, 'Invalid saved session ID.');
@@ -77,6 +81,14 @@ export default class SessionService {
       const cwd = await this.resolveDirectory(workingDirectory);
       const launch = providerSessionId ? provider.getResumeConfig?.(cwd, providerSessionId) : provider.getLaunchConfig(cwd);
       if (!launch) throw new HttpError(400, 'This provider does not support resuming saved sessions.');
+      const preferences = await this.settings.get();
+      if (!providerSessionId) {
+        const defaults = preferences.providers[provider.id];
+        if (defaults) {
+          await this.models.validate(provider.id, cwd, defaults);
+          launch.args = [...launch.args, ...launchArguments(provider.id, defaults)];
+        }
+      }
       const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
       // An interactive PTY supports color even if the server was launched by a
       // runner that disables colors for its own logs. Preserve provider overrides.
@@ -93,7 +105,7 @@ export default class SessionService {
       } catch {
         throw new HttpError(503, `Unable to start ${provider.name}. ${provider.installationHint}`);
       }
-      const terminal = new Terminal({ cols: 120, rows: 32, scrollback: 2000, allowProposedApi: true });
+      const terminal = new Terminal({ cols: 120, rows: 32, scrollback: preferences.terminal.scrollback, allowProposedApi: true });
       // Providers probe colors during startup, often before any browser connects.
       // Headless xterm parses OSC but has no renderer to answer these queries.
       for (const command of [10, 11, 12] as const) {
@@ -108,14 +120,14 @@ export default class SessionService {
       terminal.loadAddon(serializer);
       const runtime: SessionRuntime = {
         info: { id: randomUUID(), ...(providerSessionId ? { providerSessionId } : {}), provider: provider.id, workingDirectory: cwd, status: 'running', taskActivity: 'unknown', startedAt: new Date().toISOString(), exitCode: null },
-        process: child, terminal, serializer, mouseEncoding: trackMouseEncoding(terminal), events: new EventEmitter(),
+        process: child, terminal, serializer, mouseEncoding: trackMouseEncoding(terminal), dispose: () => {}, events: new EventEmitter(),
       };
       const clearActivity = ['codex', 'opencode', 'agy'].includes(provider.id)
         ? trackTaskActivity(terminal, (data) => child.write(data), (activity) => { runtime.info.taskActivity = activity; })
         : () => {};
       this.runtimes.set(runtime.info.id, runtime);
-      child.onData((output) => terminal.write(output, () => runtime.events.emit('output', output)));
-      child.onExit(({ exitCode }) => {
+      const dataListener = child.onData((output) => terminal.write(output, () => runtime.events.emit('output', output)));
+      const exitListener = child.onExit(({ exitCode }) => {
         terminal.write('', () => {
           clearActivity();
           runtime.info.status = 'exited';
@@ -123,12 +135,28 @@ export default class SessionService {
           runtime.events.emit('exit', { ...runtime.info });
         });
       });
+      runtime.dispose = () => {
+        dataListener.dispose(); exitListener.dispose(); clearActivity();
+        runtime.events.emit('removed'); runtime.events.removeAllListeners();
+        terminal.dispose();
+      };
       return { ...runtime.info };
     } finally {
       const remaining = (this.launching.get(provider.id) ?? 1) - 1;
       if (remaining) this.launching.set(provider.id, remaining);
       else this.launching.delete(provider.id);
     }
+  }
+
+  clearMemory() {
+    const clearedIds: string[] = [];
+    const failures: { id: string; error: string }[] = [];
+    for (const [id, runtime] of this.runtimes) {
+      if (runtime.info.status !== 'exited') continue;
+      try { runtime.dispose(); this.runtimes.delete(id); clearedIds.push(id); }
+      catch { failures.push({ id, error: 'Unable to clear this terminal. Retry cleanup.' }); }
+    }
+    return { clearedIds, failures };
   }
 
   async deleteHistory(provider: string, operation: () => Promise<void>): Promise<void> {
