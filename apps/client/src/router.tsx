@@ -1,30 +1,18 @@
+import { panels, legacyWorkspaceLocation } from '@/lib/workspace';
 import { createBrowserRouter, replace } from 'react-router';
-import AppLayout from '@/layouts/AppLayout';
 import ErrorBoundary from '@/pages/ErrorBoundary';
 import Loading from '@/pages/Loading';
 import NotFound from '@/pages/NotFound';
-import Sessions, { sessionsAction, sessionsLoader } from '@/pages/Sessions';
-import Settings from '@/pages/Settings';
-import Library, { libraryLoader } from '@/pages/Library';
+import Workspace from '@/pages/Workspace';
+import { sessionsLoader } from '@/pages/Sessions';
 
 const router = createBrowserRouter([
   {
-    Component: AppLayout,
     ErrorBoundary,
     HydrateFallback: Loading,
     children: [
-      { index: true, loader: () => replace('/sessions') },
-      {
-        path: 'sessions',
-        Component: Sessions,
-        loader: sessionsLoader,
-        action: sessionsAction,
-        ErrorBoundary,
-      },
-      { path: 'settings', Component: Settings, ErrorBoundary },
-      { path: 'skills', Component: Library, loader: libraryLoader, ErrorBoundary },
-      { path: 'agents', Component: Library, loader: libraryLoader, ErrorBoundary },
-      { path: 'mcps', Component: Library, loader: libraryLoader, ErrorBoundary },
+      { index: true, Component: Workspace, loader: sessionsLoader, ErrorBoundary },
+      ...panels.map(panel => ({ path: panel, loader: ({ request }: { request: Request }) => replace(legacyWorkspaceLocation(panel, request.url)) })),
       { path: '*', Component: NotFound },
     ],
   },

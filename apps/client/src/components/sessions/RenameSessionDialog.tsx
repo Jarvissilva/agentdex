@@ -1,13 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { useRevalidator } from 'react-router';
 import type { ProviderSession } from '@agentdex/shared';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/shadcn/button';
 
-interface Props { session: ProviderSession; onClose: () => void }
+interface Props { refresh: () => Promise<void>; session: ProviderSession; onClose: () => void }
 
-export default function RenameSessionDialog({ session, onClose }: Props) {
-  const { revalidate } = useRevalidator();
+export default function RenameSessionDialog({ session, onClose, refresh: revalidate }: Props) {
   const [title, setTitle] = useState(session.title);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

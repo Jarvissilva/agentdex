@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Folder, FolderOpen, LoaderCircle, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
-import { useRevalidator } from 'react-router';
 import { api, ApiRequestError } from '@/lib/api';
 import type { Provider, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { buildSessionRows, sessionRowActivity, sessionRowKey, type SessionListRow, type SessionStatusFilter } from '@/lib/sessionActivity';
@@ -9,6 +8,8 @@ import RenameSessionDialog from './RenameSessionDialog';
 import { Button } from '@/components/ui/shadcn/button';
 
 interface Props {
+  refresh: () => Promise<void>;
+  active: boolean;
   sessions: ProviderSession[];
   managedSessions: Session[];
   providers: Provider[];
@@ -41,8 +42,7 @@ function relativeTime(value: string, now: number) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-export default function SessionList({ sessions, managedSessions, providers, dateRange, search, provider, homeDirectory, groupByDirectory, activity, onActivityChange, selectedSession, openingSession, openError, onOpen, selectedTerminalId, onSelectTerminal }: Props) {
-  const { revalidate } = useRevalidator();
+export default function SessionList({ sessions, managedSessions, providers, dateRange, search, provider, homeDirectory, groupByDirectory, activity, onActivityChange, selectedSession, openingSession, openError, onOpen, selectedTerminalId, onSelectTerminal, refresh: revalidate, active }: Props) {
   const [selected, setSelected] = useState<ProviderSession | null>(null);
   const [directoryToDelete, setDirectoryToDelete] = useState<string | null>(null);
   const [confirmationPath, setConfirmationPath] = useState('');
@@ -62,9 +62,10 @@ export default function SessionList({ sessions, managedSessions, providers, date
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!active) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [active]);
   const [visibleCounts, setVisibleCounts] = useState<Map<string, number>>(() => new Map());
   const filterKey = JSON.stringify([dateRange, search, provider, activity, groupByDirectory]);
   const [previousFilters, setPreviousFilters] = useState(filterKey);
@@ -158,7 +159,7 @@ export default function SessionList({ sessions, managedSessions, providers, date
 
   return (
     <section aria-label="Saved sessions" className="min-w-0 space-y-3">
-      {renaming && <RenameSessionDialog session={renaming} onClose={() => setRenaming(null)} />}
+      {renaming && <RenameSessionDialog refresh={revalidate} session={renaming} onClose={() => setRenaming(null)} />}
       {directoryToDelete !== null && (
         <dialog ref={(element) => { if (element && !element.open) element.showModal(); }} onCancel={(event) => { event.preventDefault(); if (!deleting) setDirectoryToDelete(null); }} aria-labelledby="delete-directory-title" className="fixed inset-0 m-auto max-h-[calc(100%-2rem)] w-[calc(100%-2rem)] max-w-lg rounded-xl bg-background p-0 text-foreground backdrop:bg-black/60">
           <div className="space-y-4 rounded-xl border border-border p-6">
