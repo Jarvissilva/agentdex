@@ -67,3 +67,5 @@ export type TerminalServerMessage =
 export interface ManagedSessionsResponse {
   managedSessions: Session[];
 }
+
+export * from './library.js';

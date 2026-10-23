@@ -14,8 +14,12 @@ import ProviderRegistry from './lib/providers/index.js';
 import ProviderController from './controllers/ProviderController.js';
 import providerRoutes from './routes/providers.js';
 import SessionHistoryService from './services/SessionHistoryService.js';
+import LibraryService from './services/LibraryService.js';
+import LibraryController from './controllers/LibraryController.js';
+import libraryRoutes from './routes/library.js';
 
 interface AppOptions {
+  library?: LibraryService;
   providers?: ProviderRegistry;
   sessions?: SessionService;
   allowedOrigins?: string[];
@@ -34,6 +38,9 @@ export default function createApp(options: AppOptions = {}) {
   app.disable('x-powered-by');
   app.use('/api', access.middleware, express.json({ limit: '64kb' }));
   app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
+  const library = options.library ?? new LibraryService();
+  app.use('/api/skills', libraryRoutes(new LibraryController(library, 'skills'), true));
+  app.use('/api/mcps', libraryRoutes(new LibraryController(library, 'mcps')));
   app.use('/api/providers', providerRoutes(new ProviderController(providers)));
   app.use('/api/sessions', sessionRoutes(new SessionController(sessions, options.defaultWorkingDirectory ?? process.env.INIT_CWD ?? homedir(), new SessionHistoryService(providers))));
   app.use('/api', (_request, response) => response.status(404).json({ error: 'API endpoint not found.' }));
