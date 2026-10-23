@@ -1,0 +1,18 @@
+{
+  "name": "agentdex",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A local workspace for coding agent sessions.",
+  "scripts": {
+    "dev": "pnpm --filter @agentdex/client dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "preview": "pnpm --filter @agentdex/client preview"
+  },
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.22.0"
+}
