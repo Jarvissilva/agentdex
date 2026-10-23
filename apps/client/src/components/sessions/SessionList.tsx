@@ -4,7 +4,7 @@ import { useRevalidator } from 'react-router';
 import { api, ApiRequestError } from '@/lib/api';
 import type { Provider, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { buildSessionRows, sessionRowActivity, sessionRowKey, type SessionListRow, type SessionStatusFilter } from '@/lib/sessionActivity';
-import { compareSessionRows, parseSessionPins, reconcileSessionPins, sessionPinsStorageKey } from '@/lib/sessionPins';
+import { compareSessionRows, filterSessionRows, visibleSessionRows, parseSessionPins, reconcileSessionPins, sessionPinsStorageKey } from '@/lib/sessionPins';
 import RenameSessionDialog from './RenameSessionDialog';
 import { Button } from '@/components/ui/shadcn/button';
 
@@ -88,7 +88,7 @@ export default function SessionList({ sessions, managedSessions, providers, date
   const rows = buildSessionRows(sessions, managedSessions, providers);
   const reconciledPins = reconcileSessionPins(rows, pinned);
   if (reconciledPins !== pinned) setPinned(reconciledPins);
-  const matching = rows.filter((session) => (provider === 'all' || session.provider === provider)
+  const matching = filterSessionRows(rows, reconciledPins, (session) => (provider === 'all' || session.provider === provider)
     && (dateRange === 'all' || (Date.parse(session.updatedAt) >= dateStart.getTime() && Date.parse(session.updatedAt) < dateEnd.getTime()))
     && `${session.title} ${session.workingDirectory} ${session.id}`.toLowerCase().includes(query));
   const effectiveActivity = sessionRowActivity;
@@ -100,12 +100,12 @@ export default function SessionList({ sessions, managedSessions, providers, date
     if (group) group.push(session);
     else grouped.set(directory, [session]);
   }
-  const activePins: ReadonlySet<string> = activity === 'all' ? pinned : new Set();
+  const activePins = reconciledPins;
   for (const group of grouped.values()) {
     group.sort((a, b) => compareSessionRows(a, b, activePins));
   }
   const groups = [...grouped].sort((a, b) => compareSessionRows(a[1][0], b[1][0], activePins));
-  const displayed = groups.flatMap(([directory, group]) => groupByDirectory && collapsed.has(directory) ? [] : group.slice(0, visibleCounts.get(directory) ?? 5));
+  const displayed = groups.flatMap(([directory, group]) => visibleSessionRows(group, activePins, visibleCounts.get(directory) ?? 5, groupByDirectory && collapsed.has(directory)));
   const selectedKey = selectedSession ? sessionKey(selectedSession) : null;
   const names = new Map(providers.map((entry) => [entry.id, entry.name]));
 
@@ -216,6 +216,8 @@ export default function SessionList({ sessions, managedSessions, providers, date
           {groups.map(([directory, group]) => {
             const count = visibleCounts.get(directory) ?? 5;
             const isCollapsed = groupByDirectory && collapsed.has(directory);
+            const groupRows = visibleSessionRows(group, activePins, count, isCollapsed);
+            const remaining = group.length - groupRows.length;
             const displayDirectory = directory.split('/').filter(Boolean).slice(-2).join('/') || directory;
             return (
               <section key={directory} aria-label={groupByDirectory ? directory || 'Unknown working directory' : 'Sessions'} className="min-w-0 pb-2">
@@ -234,13 +236,13 @@ export default function SessionList({ sessions, managedSessions, providers, date
                 </h3>
                 <button type="button" aria-label={`Delete all sessions in ${directory}`} title="Delete all sessions in directory" disabled={!directory || !sessions.some((session) => session.workingDirectory === directory) || deleting || !!openingSession} onClick={() => { setDirectoryToDelete(directory); setConfirmationPath(''); setStopped(false); setError(''); }} className="mr-2 flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30"><Trash2 className="size-3" aria-hidden="true" /></button>
                 </div>}
-                {!isCollapsed && <>
+                {groupRows.length > 0 && <>
                   <ul className="space-y-1.5">
-                    {group.slice(0, count).map((session) => {
+                    {groupRows.map((session) => {
                       const status = effectiveActivity(session);
                       const statusLabel = status === 'active' ? 'Running' : status === 'needs-input' ? 'Needs input' : status === 'inactive' ? 'Ready' : 'Unknown';
                       const key = sessionRowKey(session);
-                      const isPinned = pinned.has(key);
+                      const isPinned = activePins.has(key);
                       const isSelected = session.kind === 'managed' ? selectedTerminalId === session.terminal.id : selectedKey === sessionKey(session);
                       const isOpening = session.kind === 'saved' && !!openingSession && sessionKey(openingSession) === sessionKey(session);
                       const issue = session.kind === 'saved' && openError && sessionKey(openError) === sessionKey(session) ? openError.message : null;
@@ -276,13 +278,13 @@ export default function SessionList({ sessions, managedSessions, providers, date
                               </span>
                               {isOpening && <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin" />}
                             </button>
-                            {activity === 'all' && <button type="button" aria-pressed={isPinned} aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${names.get(session.provider) ?? session.provider} session ${session.title}`} title={isPinned ? 'Unpin session' : 'Pin session'} className={`flex size-7 shrink-0 items-center justify-center rounded outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring ${isPinned ? 'text-blue-400' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setPinned((previous) => {
+                            <button type="button" aria-pressed={isPinned} aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${names.get(session.provider) ?? session.provider} session ${session.title}`} title={isPinned ? 'Unpin session' : 'Pin session'} className={`flex size-7 shrink-0 items-center justify-center rounded outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring ${isPinned ? 'text-blue-400' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setPinned((previous) => {
                               const next = new Set(previous);
                               if (next.has(key)) next.delete(key); else next.add(key);
                               return next;
                             })}>
                               {isPinned ? <PinOff aria-hidden="true" className="size-3" /> : <Pin aria-hidden="true" className="size-3" />}
-                            </button>}
+                            </button>
                             <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30" onClick={() => { if (session.kind === 'saved') setRenaming(session); }} disabled={session.kind === 'managed' || deleting || !!openingSession} title="Rename session" aria-label={`Rename ${names.get(session.provider) ?? session.provider} session ${session.title}`}>
                               <Pencil aria-hidden="true" className="size-3" />
                             </button>
@@ -295,11 +297,11 @@ export default function SessionList({ sessions, managedSessions, providers, date
                       );
                     })}
                   </ul>
-                  {count < group.length && <button type="button" className="mt-1 rounded px-1 py-1.5 text-[10px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={groupByDirectory ? `Show more sessions in ${directory || 'Unknown working directory'}` : 'Show more sessions'} onClick={() => setVisibleCounts((counts) => {
+                  {!isCollapsed && remaining > 0 && <button type="button" className="mt-1 rounded px-1 py-1.5 text-[10px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={groupByDirectory ? `Show more sessions in ${directory || 'Unknown working directory'}` : 'Show more sessions'} onClick={() => setVisibleCounts((counts) => {
                     const next = new Map(counts);
                     next.set(directory, (counts.get(directory) ?? 5) + 5);
                     return next;
-                  })}>Show more · {group.length - count} remaining</button>}
+                  })}>Show more · {remaining} remaining</button>}
                 </>}
               </section>
             );

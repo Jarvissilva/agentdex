@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import SettingsService from '../src/services/SettingsService.js';
-import ModelService, { launchArguments, parseModels } from '../src/services/ModelService.js';
+import ModelService, { launchArguments, parseModels, parseAntigravityOutput } from '../src/services/ModelService.js';
 import ProviderRegistry from '../src/lib/providers/index.js';
 import SessionService from '../src/services/SessionService.js';
 import type { SessionRuntime } from '../src/models/Session.js';
@@ -81,4 +81,10 @@ test('cleanup retains running sessions, returns partial failures, and supports r
   runtimes.get('retry')!.dispose = () => { disposed++; };
   assert.deepEqual(service.clearMemory(), { clearedIds: ['retry'], failures: [] });
   assert.deepEqual(service.clearMemory(), { clearedIds: [], failures: [] });
+});
+
+
+test('Antigravity text catalogs retain explicit IDs and reject unknown output', () => {
+  assert.deepEqual(parseModels('agy', parseAntigravityOutput('Available models:\n  exact-id (Model label)\n')), [{ id: 'exact-id', label: 'Model label', reasoning: [], reasoningKnown: false }]);
+  assert.throws(() => parseAntigravityOutput('Unexpected output'), /Unsupported/);
 });

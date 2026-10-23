@@ -9,6 +9,7 @@ import { request as httpRequest } from 'node:http';
 import { WebSocket } from 'ws';
 import type { ProvidersResponse, Session, SessionsResponse, TerminalServerMessage } from '@agentdex/shared';
 import createApp from '../src/app.js';
+import SettingsService from '../src/services/SettingsService.js';
 import SessionService from '../src/services/SessionService.js';
 import ProviderRegistry from '../src/lib/providers/index.js';
 import codex from '../src/lib/providers/codex/index.js';
@@ -44,8 +45,9 @@ function send(url: string, method: string, headers: Record<string, string>, body
 async function setup(adapters: ProviderAdapter[] = [fixtureProvider]) {
   const directory = await mkdtemp(path.join(tmpdir(), 'agentdex-test-'));
   const providers = new ProviderRegistry(adapters);
-  const sessions = new SessionService(providers);
-  const app = createApp({ providers, sessions, allowedOrigins: [origin], defaultWorkingDirectory: directory });
+  const settings = new SettingsService(path.join(directory, 'settings.json'), directory);
+  const sessions = new SessionService(providers, settings);
+  const app = createApp({ providers, sessions, settings, allowedOrigins: [origin], defaultWorkingDirectory: directory });
   app.server.listen(0, '127.0.0.1');
   await once(app.server, 'listening');
   const address = app.server.address();
@@ -527,4 +529,41 @@ test('native folder picker requires local authentication and validates input bef
   assert.equal(denied.status, 403);
   const invalid = await context.request('/sessions/pick-directory', 'POST', { workingDirectory: 42 });
   assert.equal(invalid.status, 400);
+});
+
+test('settings endpoints preserve defaults, enforce access, and reject invalid writes', async t => {
+  const context = await setup();
+  t.after(context.cleanup);
+  const initial = await context.request('/settings');
+  assert.equal(initial.status, 200);
+  const preferences = await initial.json();
+  assert.equal(preferences.startingDirectory, context.directory);
+  assert.equal(preferences.terminal.fontSize, 14);
+  const saved = await context.request('/settings', 'PUT', { ...preferences, terminal: { fontSize: 18, scrollback: 0 } });
+  assert.equal(saved.status, 200);
+  assert.equal((await (await context.request('/settings')).json()).terminal.scrollback, 0);
+  assert.equal((await context.request('/settings', 'PUT', { ...preferences, terminal: { fontSize: 99, scrollback: 0 } })).status, 400);
+  assert.equal((await (await context.request('/settings')).json()).terminal.fontSize, 18);
+  assert.equal((await context.request('/settings', 'PUT', preferences, { Host: 'evil.example', Origin: 'http://evil.example' })).status, 403);
+  assert.equal((await context.request('/sessions/clear-memory', 'POST', undefined, { Host: 'evil.example', Origin: 'http://evil.example' })).status, 403);
+});
+
+test('terminal cleanup keeps running processes and reconnect snapshots retain scrollback', async t => {
+  const context = await setup();
+  t.after(context.cleanup);
+  const preferences = await (await context.request('/settings')).json();
+  await context.request('/settings', 'PUT', { ...preferences, terminal: { fontSize: 16, scrollback: 32 } });
+  const session = await (await context.request('/sessions', 'POST', { workingDirectory: context.directory })).json() as Session;
+  assert.equal(context.sessions.getRuntime(session.id).terminal.options.scrollback, 32);
+  assert.deepEqual(await (await context.request('/sessions/clear-memory', 'POST')).json(), { clearedIds: [], failures: [] });
+  const terminal = connect(context.base, session.id, context.headers);
+  await waitFor(() => terminal.messages.some(m => m.type === 'snapshot'));
+  const snapshot = terminal.messages.find(m => m.type === 'snapshot');
+  assert.equal(snapshot?.type === 'snapshot' && snapshot.scrollback, 32);
+  terminal.socket.close();
+  context.sessions.stop(session.id);
+  await waitFor(() => context.sessions.getRuntime(session.id).info.status === 'exited');
+  assert.deepEqual(await (await context.request('/sessions/clear-memory', 'POST')).json(), { clearedIds: [session.id], failures: [] });
+  assert.deepEqual(await (await context.request('/sessions/clear-memory', 'POST')).json(), { clearedIds: [], failures: [] });
+  assert.throws(() => context.sessions.getRuntime(session.id), /not found/);
 });

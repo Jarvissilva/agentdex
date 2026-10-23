@@ -26,8 +26,20 @@ export function parseModels(id: string, raw: unknown): ProviderModel[] {
     if (typeof modelId !== 'string' || !modelId) throw new Error('Provider returned an invalid model ID.');
     const choices = m.supportedReasoningEfforts ?? m.reasoningEfforts ?? m.efforts ?? m.variants;
     const reasoning = Array.isArray(choices) ? choices.map(v => typeof v === 'string' ? v : object(v).reasoningEffort ?? object(v).id).filter((v): v is string => typeof v === 'string') : Object.keys(object(choices));
-    return { id: modelId, label: typeof m.displayName === 'string' ? m.displayName : typeof m.name === 'string' ? m.name : modelId, reasoning };
+    return { id: modelId, label: typeof m.displayName === 'string' ? m.displayName : typeof m.name === 'string' ? m.name : modelId, reasoning, ...(choices === undefined ? { reasoningKnown: false } : {}) };
   });
+}
+
+export function parseAntigravityOutput(output: string): unknown {
+  try { return JSON.parse(output); } catch { /* Native CLI also exposes a text catalog. */ }
+  const lines = output.trim().split(/\r?\n/);
+  if (lines.shift()?.trim() !== 'Available models:') throw new Error('Unsupported Antigravity model catalog format. Enter a custom model ID.');
+  const models = lines.filter(line => line.trim()).map(line => {
+    const match = /^\s+(?:[-*]\s+)?([a-zA-Z0-9][a-zA-Z0-9._:/-]*)(?:\s+[-–]\s+(.+)|\s+\((.+)\))?\s*$/.exec(line);
+    if (!match) throw new Error('Unsupported Antigravity model entry. Enter a custom model ID.');
+    return { id: match[1], name: match[2] ?? match[3] ?? match[1] };
+  });
+  return { models };
 }
 
 export default class ModelService {
@@ -45,16 +57,17 @@ export default class ModelService {
       const executable = await resolveExecutable(config.executable, process.env.PATH);
       if (!executable) throw new Error(`${provider.name} executable was not found. ${provider.installationHint}`);
       let raw: unknown;
-      if (id === 'codex') raw = await this.codex(executable, cwd);
+      if (id === 'codex') raw = await this.codex(executable, cwd, config.env);
       else {
         const args = id === 'agy' ? ['models'] : ['api', 'get', `/api/model?location=${encodeURIComponent(JSON.stringify({ directory: cwd }))}`];
         const { stdout } = await execute(executable, args, { cwd, env: { ...process.env, ...config.env }, timeout: 15000, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' });
-        raw = JSON.parse(stdout);
+        raw = id === 'agy' ? parseAntigravityOutput(stdout) : JSON.parse(stdout);
       }
       result = { models: parseModels(id, raw), status: 'available' };
     } catch (error) {
-      result = { models: [], status: 'unavailable', error: `Model discovery failed: ${error instanceof Error ? error.message : 'Unknown error'}. You can still enter a custom model ID; the provider validates it at launch.` };
+      result = { models: [], status: 'unavailable', error: `Model discovery failed: ${error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'}. You can still enter a custom model ID; the provider validates it at launch.` };
     }
+    if (this.cache.size >= 100) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, { time: Date.now(), result });
     return result;
   }
@@ -63,12 +76,15 @@ export default class ModelService {
     if (id === 'opencode' && defaults.reasoning && !defaults.model) throw new HttpError(400, 'Choose an OpenCode model before a variant.');
     const catalog = await this.list(id, directory);
     const model = catalog.models.find(m => m.id === defaults.model);
-    if (model && defaults.reasoning && !model.reasoning.includes(defaults.reasoning)) throw new HttpError(400, 'This model does not support the selected reasoning / variant.');
+    if (model && model.reasoningKnown !== false && defaults.reasoning && !model.reasoning.includes(defaults.reasoning)) throw new HttpError(400, 'This model does not support the selected reasoning / variant.');
   }
-  private codex(executable: string, cwd: string): Promise<unknown> {
+  private codex(executable: string, cwd: string, env?: Record<string, string>): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      const child = spawn(executable, ['app-server', '--listen', 'stdio://'], { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
+      const child = spawn(executable, ['app-server', '--listen', 'stdio://'], { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'ignore'] });
       let buffer = ''; let total = 0; let settled = false;
+      let nextId = 2;
+      const models: unknown[] = [];
+      const cursors = new Set<string>();
       const finish = (error?: Error, result?: unknown) => {
         if (settled) return;
         settled = true; clearTimeout(timer); child.kill('SIGKILL');
@@ -91,8 +107,17 @@ export default class ModelService {
             if (message.error) { finish(new Error(String(object(message.error).message ?? 'Codex request failed'))); return; }
             if (message.id === 1) {
               child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
-              send(2, 'model/list', { includeHidden: false });
-            } else if (message.id === 2) finish(undefined, message.result);
+              send(nextId, 'model/list', { includeHidden: false, limit: 100 });
+            } else if (message.id === nextId) {
+              const result = object(message.result);
+              if (!Array.isArray(result.data)) { finish(new Error('Invalid Codex model catalog')); return; }
+              models.push(...result.data);
+              if (typeof result.nextCursor === 'string' && result.nextCursor) {
+                if (cursors.has(result.nextCursor)) { finish(new Error('Codex repeated a model catalog cursor')); return; }
+                cursors.add(result.nextCursor);
+                send(++nextId, 'model/list', { includeHidden: false, limit: 100, cursor: result.nextCursor });
+              } else finish(undefined, { data: models });
+            }
           } catch { finish(new Error('Invalid Codex model response')); }
         }
       });

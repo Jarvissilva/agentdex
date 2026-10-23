@@ -26,3 +26,13 @@ export function reconcileSessionPins(rows: SessionListRow[], pins: Set<string>):
   }
   return next;
 }
+
+// Pins stay visible even when their directory is collapsed or its page is full.
+export function visibleSessionRows(rows: SessionListRow[], pins: ReadonlySet<string>, count: number, collapsed: boolean): SessionListRow[] {
+  let unpinnedCount = 0;
+  return rows.filter((row) => pins.has(sessionRowKey(row)) || (!collapsed && unpinnedCount++ < count));
+}
+
+export function filterSessionRows(rows: SessionListRow[], pins: ReadonlySet<string>, matches: (row: SessionListRow) => boolean): SessionListRow[] {
+  return rows.filter((row) => pins.has(sessionRowKey(row)) || matches(row));
+}

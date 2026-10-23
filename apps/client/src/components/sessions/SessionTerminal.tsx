@@ -142,12 +142,15 @@ export default function SessionTerminal({ sessionId, providerId, providerName, o
     const updateFont = (settings: Settings) => { if (!disposed) { terminal.options.fontSize = settings.terminal.fontSize; resize(); } };
     const settingsChanged = (event: Event) => updateFont((event as CustomEvent<Settings>).detail);
     window.addEventListener('agentdex-settings', settingsChanged);
+    const settingsChannel = 'BroadcastChannel' in window ? new BroadcastChannel('agentdex-settings') : null;
+    if (settingsChannel) settingsChannel.onmessage = (event: MessageEvent<Settings>) => updateFont(event.data);
     void api<Settings>('/settings', { signal: preferencesController.signal }).then(updateFont).catch(() => {});
     connect();
 
     return () => {
       disposed = true;
       preferencesController.abort();
+      settingsChannel?.close();
       window.removeEventListener('agentdex-settings', settingsChanged);
       clearTimeout(retry);
       observer.disconnect();

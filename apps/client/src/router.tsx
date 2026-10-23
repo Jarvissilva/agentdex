@@ -1,7 +1,6 @@
-import { createBrowserRouter } from 'react-router';
+import { createBrowserRouter, replace } from 'react-router';
 import AppLayout from '@/layouts/AppLayout';
 import ErrorBoundary from '@/pages/ErrorBoundary';
-import Home, { homeLoader } from '@/pages/Home';
 import Loading from '@/pages/Loading';
 import NotFound from '@/pages/NotFound';
 import Sessions, { sessionsAction, sessionsLoader } from '@/pages/Sessions';
@@ -14,7 +13,7 @@ const router = createBrowserRouter([
     ErrorBoundary,
     HydrateFallback: Loading,
     children: [
-      { index: true, Component: Home, loader: homeLoader, ErrorBoundary },
+      { index: true, loader: () => replace('/sessions') },
       {
         path: 'sessions',
         Component: Sessions,

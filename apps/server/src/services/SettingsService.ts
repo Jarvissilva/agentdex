@@ -19,7 +19,7 @@ export default class SettingsService {
     if (!['codex', 'agy', 'opencode'].includes(s.defaultProviderId) || !text(s.startingDirectory) || !s.startingDirectory.trim() || !(path.isAbsolute(s.startingDirectory) || s.startingDirectory === '~' || s.startingDirectory.startsWith('~/')) || !s.providers || !s.terminal) throw invalid();
     for (const id of ['codex', 'agy', 'opencode']) {
       const p = s.providers[id];
-      if (!p || !text(p.model) || !text(p.reasoning) || (id === 'opencode' && p.reasoning && !p.model) || (id === 'opencode' && p.model && (!p.model.includes('/') || p.model.includes('#')))) throw invalid();
+      if (!p || !text(p.model) || !text(p.reasoning) || (id === 'opencode' && p.reasoning && !p.model) || (id === 'opencode' && p.model && (!/^[^/#]+\/[^#]+$/.test(p.model)))) throw invalid();
     }
     if (!Number.isInteger(s.terminal.fontSize) || s.terminal.fontSize < 10 || s.terminal.fontSize > 24 || !Number.isInteger(s.terminal.scrollback) || s.terminal.scrollback < 0 || s.terminal.scrollback > 10000) throw invalid();
     return { defaultProviderId: s.defaultProviderId, startingDirectory: s.startingDirectory.trim(), providers: Object.fromEntries(['codex', 'agy', 'opencode'].map(id => [id, { model: s.providers[id]!.model.trim(), reasoning: s.providers[id]!.reasoning.trim() }])), terminal: { ...s.terminal } };

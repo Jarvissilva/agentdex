@@ -12,15 +12,15 @@ function ProviderSettings({ id, name, directory, value, onChange }: { id: string
   useEffect(() => {
     const controller = new AbortController();
 
-    void api<ModelsResponse>(`/providers/${id}/models?${new URLSearchParams({ workingDirectory: directory, refresh: String(refresh > 0) })}`, { signal: controller.signal }).then(setCatalog).catch((error: unknown) => {
+    const timer = setTimeout(() => { void api<ModelsResponse>(`/providers/${id}/models?${new URLSearchParams({ workingDirectory: directory, refresh: String(refresh > 0) })}`, { signal: controller.signal }).then(setCatalog).catch((error: unknown) => {
       if (!controller.signal.aborted) setCatalog({ models: [], status: 'unavailable', error: error instanceof Error ? error.message : 'Model discovery failed. Enter a custom ID.' });
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); }, 400);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [id, directory, refresh]);
   const options = catalog?.models.find(m => m.id === value.model)?.reasoning ?? [];
   const changeModel = (model: string) => onChange({ model, reasoning: '' });
   return <fieldset className="space-y-3 rounded-lg border border-border p-4">
-    <div className="flex items-center justify-between gap-3"><legend className="font-medium">{name}</legend><Button type="button" variant="ghost" size="sm" disabled={loading} onClick={() => { setLoading(true); setRefresh(n => n + 1); }}>{loading ? 'Discovering…' : 'Refresh models'}</Button></div>
+    <legend className="px-1 font-medium">{name}</legend><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" disabled={loading} onClick={() => { setLoading(true); setRefresh(n => n + 1); }}>{loading ? 'Discovering…' : 'Refresh models'}</Button></div>
     {catalog?.error && <p role="status" className="text-xs text-muted-foreground">{catalog.error}</p>}
     <label className="block space-y-1 text-sm"><span>Model</span><Select value={value.model || '__default'} onValueChange={v => changeModel(v === '__default' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__default">Use provider default</SelectItem>{value.model && !catalog?.models.some(m => m.id === value.model) && <SelectItem value={value.model}>{value.model} (custom)</SelectItem>}{catalog?.models.map(m => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}</SelectContent></Select></label>
     <label className="block space-y-1 text-sm"><span>Custom model ID</span><input className={inputClass} value={value.model} placeholder={id === 'opencode' ? 'provider/model' : 'Use provider default'} onChange={e => changeModel(e.target.value)} /></label>
@@ -51,7 +51,7 @@ export default function Settings() {
   }, [retry]);
   async function save() {
     setBusy(true); setError(''); setFeedback('');
-    try { const saved = await api<Preferences>('/settings', { method: 'PUT', body: JSON.stringify(settings) }); setSettings(saved); window.dispatchEvent(new CustomEvent('agentdex-settings', { detail: saved })); setFeedback('Settings saved.'); }
+    try { const saved = await api<Preferences>('/settings', { method: 'PUT', body: JSON.stringify(settings) }); setSettings(saved); window.dispatchEvent(new CustomEvent('agentdex-settings', { detail: saved })); if ('BroadcastChannel' in window) { const channel = new BroadcastChannel('agentdex-settings'); channel.postMessage(saved); channel.close(); } setFeedback('Settings saved.'); }
     catch (e) { setError(e instanceof Error ? e.message : 'Unable to save. Retry.'); }
     finally { setBusy(false); }
   }

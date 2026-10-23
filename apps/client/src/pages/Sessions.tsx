@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ListFilter, Search, Plus, RefreshCw, Square, X } from 'lucide-react';
+import { ListFilter, Maximize, PanelRight, Search, Plus, RefreshCw, Square, X } from 'lucide-react';
 import { data, Form, useActionData, useLoaderData, useNavigation, useOutletContext, useRevalidator, useSearchParams, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import type { CreateSessionRequest, ManagedSessionsResponse, ProvidersResponse, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { Button } from '@/components/ui/shadcn/button';
@@ -60,7 +60,7 @@ export default function Sessions() {
   const onExit = useCallback(() => { void revalidate(); }, [revalidate]);
   const [dateRange, setDateRange] = useState('today');
   const dateOptions = [{ value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: '7days', label: 'Last 7 days' }, { value: '30days', label: 'Last 30 days' }, { value: 'all', label: 'All time' }];
-  const [activity, setActivity] = useState<SessionStatusFilter>('active');
+  const [activity, setActivity] = useState<SessionStatusFilter>('all');
   const statusOptions = [{ value: 'all', label: 'All' }, { value: 'active', label: 'Running' }, { value: 'needs-input', label: 'Needs input' }, { value: 'inactive', label: 'Ready' }] as const;
   const [provider, setProvider] = useState('all');
   const [groupByDirectory, setGroupByDirectory] = useState(false);
@@ -71,6 +71,8 @@ export default function Sessions() {
   const activeTab = managedSessions.some(session => session.id === requestedTab) ? requestedTab : visibleSessions.at(-1)?.id ?? '';
   const workspace = useOutletContext<WorkspaceContext>();
   const { closeMobileExplorer } = workspace;
+  const explorerVisible = workspace.desktop ? workspace.explorerOpen : workspace.mobileExplorerOpen;
+  const explorerToggleLabel = explorerVisible ? 'Expand terminal workspace' : 'Show sessions explorer';
   const [openingSession, setOpeningSession] = useState<ProviderSession | null>(null);
   const [openError, setOpenError] = useState<{ provider: string; id: string; message: string } | null>(null);
   const opening = useRef(false);
@@ -173,7 +175,7 @@ export default function Sessions() {
             </Popover.Root>
             <Popover.Root>
               <Popover.Trigger asChild>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="Filter sessions" title="Filter sessions" className={provider !== 'all' || dateRange !== 'today' || activity !== 'active' || groupByDirectory ? 'text-blue-400' : ''}><ListFilter aria-hidden="true" /></Button>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Filter sessions" title="Filter sessions" className={provider !== 'all' || dateRange !== 'today' || activity !== 'all' || groupByDirectory ? 'text-blue-400' : ''}><ListFilter aria-hidden="true" /></Button>
               </Popover.Trigger>
               <Popover.Portal>
                 <Popover.Content align="end" sideOffset={4} className="z-50 w-56 space-y-3 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-md">
@@ -229,9 +231,9 @@ export default function Sessions() {
                 const directory = session.workingDirectory.split('/').filter(Boolean).at(-1) ?? '/';
                 const saved = sessions.find((entry) => entry.provider === session.provider && entry.id === session.providerSessionId);
                 return <div key={session.id} className={`flex shrink-0 items-center border-r border-t-2 border-border ${activeTab === session.id ? 'border-t-blue-400 bg-background' : 'border-t-transparent hover:bg-accent'}`}>
-                  <Tabs.Trigger value={session.id} title={`${name} · ${session.workingDirectory} · ${saved?.title ?? session.id}`} className="flex h-9.5 max-w-64 shrink-0 items-center gap-2 px-3 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[state=active]:text-foreground">
+                  <Tabs.Trigger value={session.id} title={`${name} · ${session.workingDirectory} · ${saved?.title ?? session.id}`} className="flex h-9.5 max-w-40 shrink-0 items-center gap-1.5 px-2 text-xs md:max-w-56 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[state=active]:text-foreground">
                     <span aria-label={sessionActivity(session).label} className={`size-1.5 shrink-0 rounded-full ${sessionActivity(session).needsInput ? 'bg-amber-400' : sessionActivity(session).running ? 'bg-emerald-400' : session.status === 'running' && session.taskActivity === 'not-running' ? 'bg-blue-400' : 'bg-muted-foreground'}`} />
-                    <span className="truncate">{name} · {saved?.title ?? directory}</span>
+                    <span className="min-w-0 truncate text-left">{name} · {saved?.title ?? directory}</span>
                   </Tabs.Trigger>
                   <button type="button" aria-label={`Close ${name} · ${saved?.title ?? directory} tab`} title="Close tab" onClick={() => closeTab(session.id)} className="mr-1 rounded p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
                     <X className="size-3" aria-hidden="true" />
@@ -243,14 +245,18 @@ export default function Sessions() {
             </div>
             {selectedSession?.status === 'running' && <Form method="post" className="shrink-0 border-l border-border">
               <input type="hidden" name="sessionId" value={selectedSession.id} />
-              <Button type="submit" name="intent" value="stop" variant="ghost" size="icon" disabled={pending} aria-label="Stop session" title="Stop session"><Square aria-hidden="true" /></Button>
+              <Button type="submit" name="intent" value="stop" variant="ghost" size="icon" className="text-destructive hover:text-destructive" disabled={pending} aria-label="Stop session" title="Stop session"><Square aria-hidden="true" /></Button>
             </Form>}
+            <div className="shrink-0 border-l border-border">
+            <Button type="button" variant="ghost" size="icon" className="aria-expanded:bg-transparent aria-expanded:text-inherit" aria-label={explorerToggleLabel} title={explorerToggleLabel} aria-controls={workspace.desktop ? 'sessions-explorer' : 'mobile-sessions-explorer'} aria-expanded={explorerVisible} onClick={workspace.toggleExplorer}>
+              {explorerVisible ? <Maximize aria-hidden="true" /> : <PanelRight aria-hidden="true" />}
+            </Button>
+            </div>
           </div>
           {!selectedSession && <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
             <h2 className="text-lg font-medium">Your coding workspace</h2>
             <p className="max-w-sm text-sm text-muted-foreground">Open a saved session from the explorer to continue, or start a new session.</p>
             <Button type="button" onClick={() => setCreating(true)}><Plus aria-hidden="true" />New session</Button>
-            <Button type="button" variant="ghost" onClick={workspace.toggleExplorer}>Toggle sessions explorer</Button>
           </div>}
           {visibleSessions.map((session) => {
             const providerName = providers.find((provider) => provider.id === session.provider)?.name ?? session.provider;

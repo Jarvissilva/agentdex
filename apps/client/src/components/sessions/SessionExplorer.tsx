@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
 import type { WorkspaceContext } from '@/layouts/AppLayout';
@@ -7,23 +7,9 @@ interface Props extends WorkspaceContext {
   children: ReactNode;
 }
 
-export default function SessionExplorer({ children, explorerOpen, mobileExplorerOpen, closeMobileExplorer }: Props) {
-  const [desktop, setDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+export default function SessionExplorer({ children, desktop, explorerOpen, mobileExplorerOpen, closeMobileExplorer }: Props) {
   const [width, setWidth] = useState(360);
   const drag = useRef<{ x: number; width: number } | null>(null);
-  const closeMobile = useRef(closeMobileExplorer);
-  useEffect(() => { closeMobile.current = closeMobileExplorer; }, [closeMobileExplorer]);
-
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)');
-    const update = () => {
-      setDesktop(media.matches);
-      if (media.matches) closeMobile.current();
-    };
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-
   if (!desktop) return (
     <Dialog.Root open={mobileExplorerOpen} onOpenChange={(open) => { if (!open) closeMobileExplorer(); }}>
       <Dialog.Portal>
