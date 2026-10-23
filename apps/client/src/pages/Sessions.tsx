@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ListFilter, Search, Plus, RefreshCw, Square, X } from 'lucide-react';
-import { data, Form, useActionData, useLoaderData, useNavigation, useOutletContext, useRevalidator, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
+import { ListFilter, Search, Plus, RefreshCw, Square, X, Command } from 'lucide-react';
+import { data, Form, Link, useActionData, useLoaderData, useNavigation, useOutletContext, useRevalidator, useSearchParams, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
 import type { CreateSessionRequest, ManagedSessionsResponse, ProvidersResponse, ProviderSession, Session, SessionsResponse } from '@agentdex/shared';
 import { Button } from '@/components/ui/shadcn/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/shadcn/select';
@@ -72,7 +72,14 @@ export default function Sessions() {
   const [openingSession, setOpeningSession] = useState<ProviderSession | null>(null);
   const [openError, setOpenError] = useState<{ provider: string; id: string; message: string } | null>(null);
   const opening = useRef(false);
-  const [creating, setCreating] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [creating, setCreating] = useState(() => searchParams.get('new') === '1');
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const selectedSession = managedSessions.find((session) => session.id === activeTab);
   function closeTab(id: string) {
     const index = visibleSessions.findIndex((session) => session.id === id);
@@ -150,7 +157,7 @@ export default function Sessions() {
       <title>Sessions · Agentdex</title>
       <SessionExplorer {...workspace}>
         <div className="mb-3 flex items-center justify-between gap-2 px-3">
-          <h1 className="min-w-0 truncate text-xs font-medium uppercase tracking-wider">Sessions <span className="ml-1 text-muted-foreground">{sessions.length}</span></h1>
+          <h1 className="min-w-0 truncate text-xs font-medium uppercase tracking-wider">Sessions</h1>
           <div className="flex items-center gap-1">
             <Popover.Root>
               <Popover.Trigger asChild>
@@ -209,6 +216,9 @@ export default function Sessions() {
         {actionData?.error && <p role="alert" className="p-3 text-sm text-destructive">{actionData.error}</p>}
         <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-w-0 shrink-0 items-center border-b border-border bg-sidebar">
+            <Link to="/" aria-label="Home" title="Home" className="flex shrink-0 items-center justify-center self-stretch border-r border-border px-3 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              <Command className="size-4" aria-hidden="true" />
+            </Link>
             <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
             <Tabs.List aria-label="Session tabs" className="flex shrink-0 items-center">
               {visibleSessions.map((session) => {

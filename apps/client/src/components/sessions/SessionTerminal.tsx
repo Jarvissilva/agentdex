@@ -155,7 +155,7 @@ export default function SessionTerminal({ sessionId, providerId, providerName, o
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {connection !== 'Connected' && !connection.startsWith('Session ended') && <div role="status" className="shrink-0 px-2 py-1 text-xs text-muted-foreground">{connection}</div>}
-      <div className={inset ? 'min-h-0 flex-1 px-4 pb-4' : 'min-h-0 flex-1'}>
+      <div className={inset ? 'min-h-0 flex-1 px-4 pb-3.5' : 'min-h-0 flex-1'}>
         <div ref={container} aria-label={`${providerName} terminal`} className="h-full w-full" />
       </div>
     </div>
