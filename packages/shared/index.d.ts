@@ -33,7 +33,7 @@ export interface StoredSession {
   id: string;
   title: string;
   workingDirectory: string;
-  createdAt: string;
+  createdAt: string | null;
   updatedAt: string;
   archived: boolean;
 }

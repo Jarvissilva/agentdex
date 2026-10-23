@@ -1,12 +1,14 @@
 import type { Provider } from '@agentdex/shared';
 import HttpError from '../HttpError.js';
 import codex from './codex.js';
+import agy from './agy.js';
+import opencode from './opencode.js';
 import type { ProviderAdapter } from './types.js';
 
 export default class ProviderRegistry {
   private readonly adapters: Map<string, ProviderAdapter>;
 
-  constructor(adapters: readonly ProviderAdapter[] = [codex], readonly defaultProviderId = 'codex') {
+  constructor(adapters: readonly ProviderAdapter[] = [codex, agy, opencode], readonly defaultProviderId = 'codex') {
     this.adapters = new Map(adapters.map((adapter) => [adapter.id, adapter]));
     if (this.adapters.size !== adapters.length) throw new Error('Provider IDs must be unique.');
     if (!this.adapters.has(defaultProviderId)) throw new Error('The default provider must be registered.');
